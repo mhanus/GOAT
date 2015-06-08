@@ -32,25 +32,29 @@ class ProblemData(object):
     self.reg_name_mat_name_map = dict()
     boundary_physical_name_map = dict()
 
+    mesh_spec = None
     if mesh_module != "":
       try:
-        self.mesh_spec = self.mesh_data_from_module(mesh_module)
-      except ImportError, IOError:
+        mesh_spec = self.mesh_data_from_module(mesh_module)
+      except (ImportError, IOError):
         # TODO: error importing mesh_module
         sys.exit(-1)
 
       try:
-        self.region_physical_name_map = self.mesh_spec.region_physical_name_map
+        self.region_physical_name_map = mesh_spec.region_map
       except:
         pass
 
+
+      # try to get bc data from boundary_id-to-boundary_name map and a file with boundary_name-to-bc correspondences
       try:
-        boundary_physical_name_map = self.mesh_spec.boundary_physical_name_map
+        boundary_physical_name_map = mesh_spec.boundary_map
       finally:
+        # use either the boundary_physical_name_map, or - if not set - assume all-vacuum bc
         self.bc = BoundaryData.from_boundary_names_map(boundary_physical_name_map)
 
       try:
-        self.reg_name_mat_name_map = self.mesh_spec.reg_name_mat_name_map
+        self.reg_name_mat_name_map = mesh_spec.material_map
       except:
         pass
 
@@ -58,6 +62,28 @@ class ProblemData(object):
       self.region_physical_names_from_file( os.path.join(self.folder, "reg_names.txt") )
       self.reg_names_to_material_names_from_file( os.path.join(self.folder, "mat_names.txt") )
       self.bc = BoundaryData.from_file( os.path.join(self.folder, "bnd_names.txt") )
+
+    self.load_core_and_bc_data()
+
+    # Check if bcs have been loaded from 'core.dat'; if not, try loading them directly from the mesh module
+    if mesh_spec is not None:
+      if len(self.bc.vacuum_boundaries) == 0:
+        try:
+          self.bc.vacuum_boundaries = mesh_spec.vacuum_boundaries
+        except AttributeError:
+          pass
+
+      if len(self.bc.reflective_boundaries) == 0:
+        try:
+          self.bc.reflective_boundaries = mesh_spec.reflective_boundaries
+        except AttributeError:
+          pass
+
+      if len(self.bc.incoming_fluxes) == 0:
+        try:
+          self.bc.incoming_fluxes = mesh_spec.incoming_fluxes
+        except AttributeError:
+          pass
 
   def mesh_data_from_module(self, name):
     try:
@@ -100,9 +126,10 @@ class ProblemData(object):
     except AssertionError:
       warning("File with material names has incorrect format - default names equal to region names will be used.")
 
-  def load_core_data(self):
+  def load_core_and_bc_data(self):
     data_file_name = os.path.join(self.folder, "core.dat")
 
+    lines = []
     with open(data_file_name) as f:
       lines = f.readlines()
 

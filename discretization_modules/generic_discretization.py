@@ -41,7 +41,7 @@ class Discretization(object):
     try:
       self.mesh = problem.mesh_spec.mesh
       self.boundaries = problem.mesh_spec.boundaries
-      self.mesh_regions = problem.mesh_spec.mesh_regions
+      self.mesh_regions = problem.mesh_spec.regions
 
     except AttributeError:
       if not mesh_base_name:

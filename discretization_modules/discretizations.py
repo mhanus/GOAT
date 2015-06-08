@@ -50,7 +50,7 @@ class SNDiscretization(Discretization):
     self.t_spaces.start()
 
     self.Vpsi1 = VectorFunctionSpace(self.mesh, "CG", self.parameters["p"], self.M)
-    self.Vpsi = MixedFunctionSpace([self.Vpsi1]*G)
+    self.Vpsi = MixedFunctionSpace([self.Vpsi1]*self.G)
     self.Vphi = MixedFunctionSpace([FunctionSpace(self.mesh, "CG", self.parameters["p"])]*self.G)
     self.Vphi1 = FunctionSpace(self.mesh, "CG", self.parameters["p"])
 
