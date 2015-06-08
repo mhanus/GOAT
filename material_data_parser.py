@@ -8,7 +8,8 @@ xs_names = \
   'St': 'St',
   'Ss': 'Ss',
   'nSf': 'nSf',
-  'chi': 'chi'
+  'chi': 'chi',
+  'Q': 'Q'
 }
 
 def parse_material(data_file_name):
@@ -46,14 +47,23 @@ def parse_material(data_file_name):
             G = data_array.shape[0]
 
           if data_array.size != G:
-            # Scattering
-            data_array = numpy.atleast_3d(data_array.reshape((-1,G,G)))
 
-            # Assert consistency of xs data (or set the scattering order for the first time)
             try:
-              assert data_array.shape[0] == K
-            except NameError:
-              K = data_array.shape[0]
+              # Scattering
+              data_array = numpy.atleast_3d(data_array.reshape((-1,G,G)))
+            except ValueError:
+              try:
+                # Source
+                data_array = numpy.atleast_2d(data_array.reshape((-1,G)))
+              except ValueError:
+                #TODO: Invalid data format error
+                raise
+            else:
+              # Assert consistency of xs data (or set the scattering order for the first time)
+              try:
+                assert data_array.shape[0] == K
+              except NameError:
+                K = data_array.shape[0]
 
           # Save the transformed buffer to the output dictionary
           xs_data[xs] = data_array

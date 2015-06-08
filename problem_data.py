@@ -148,10 +148,11 @@ class ProblemData(object):
         self.G = G
         self.scattering_order = K
 
-  def distribute_material_data(self, regions):
+  def distribute_material_data(self, regions, M):
     """
     :param ndarray regions: Array that stores physical region number (physical group in GMSH mesh) for each cell of
                             current rank's mesh partition.
+    :param int M: Number of discrete directions (to be matched by the source term).
     """
 
     self.regions_materials = self.reg_mat_map[regions]
@@ -161,11 +162,21 @@ class ProblemData(object):
         xs_data = numpy.load(self.data_file_name(mat_name))
       except (OSError, IOError) as e:
         coupled_solver_error(__file__,
-                             "initialize MaterialData for material {}".format(mat_name),
+                             "initialize XS data for material {}".format(mat_name),
                              "Data file " + self.data_file_name(mat_name) + " could not be loaded.\n" +
                              "DETAILS:  " + str(e))
 
       for xs, xsd in xs_data.iterkeys():
+        if xs == 'Q':
+          if xsd.shape[0] == 1:
+            # expand isotropic source to all directions
+            xsd = numpy.repeat(xsd,M,0)
+            xsd *= 1./(4*numpy.pi)
+          elif xsd.shape[0] != M:
+            coupled_solver_error(__file__,
+                                 "initialize XS data for material {}".format(mat_name),
+                                 "Invalid number of source directions ({}, expected {})".format(xsd.shape[0], M))
+
         try:
           xs_array = self.xsd[xs]
         except KeyError:
