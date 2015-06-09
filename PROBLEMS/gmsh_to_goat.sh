@@ -9,16 +9,16 @@ problem=$1
 if [ "$#" -eq 2 ]; then
     mesh=$2
 else
-    mesh = $problem
+    mesh=$problem
 fi
 
-dos2unix $mesh.msh
+dos2unix $problem/$mesh.msh
 
 if [ $? -ne 0 ]; then
     echo "Dos2unix not performed."
 fi
 
-dolfin-convert $mesh.msh $mesh.xml$
+dolfin-convert $problem/$mesh.msh $mesh.xml
 
 if [ $? -ne 0 ]; then
     echo "Fatal error occured - GOAT meshes not produced."

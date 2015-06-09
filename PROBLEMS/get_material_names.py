@@ -20,10 +20,10 @@ parser.add_argument('-v', '--verbosity', type=int, choices=range(6), default=0,
 
 args = parser.parse_args()
 
-problem_folder = os.path.join(os.path.abspath(__file__), args.problem_name)
+problem_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.problem_name)
 
 mesh_base_filename = args.mesh if args.mesh else args.problem_name
-mesh_filename = mesh_base_filename + ".msh"
+mesh_filename = os.path.join(problem_folder, mesh_base_filename + ".msh")
 mesh_file_last_mod = os.path.getmtime(mesh_filename)
 
 if args.verbosity > 0: print "Extracting material and boundary names into separate files."
@@ -31,16 +31,18 @@ if args.verbosity > 0: print "Extracting material and boundary names into separa
 state = 0
 num = 0
 vol_markers = []
-bnd_markers = []
-bnd_ids = []
-vol_marker_ids = []
+srf_markers = []
+lin_markers = []
+srf_ids = []
+vol_ids = []
+lin_ids = []
 
 try:
   with open(os.path.join(problem_folder, mesh_filename), "rt") as f:
-    mat_names_file = os.path.join(problem_folder, 'mat_names.txt')
+    reg_names_file = os.path.join(problem_folder, 'reg_names.txt')
     bnd_names_file = os.path.join(problem_folder, 'bnd_names.txt')
 
-    if os.path.isfile(mat_names_file) and os.path.getmtime(mat_names_file) >= mesh_file_last_mod and \
+    if os.path.isfile(reg_names_file) and os.path.getmtime(reg_names_file) >= mesh_file_last_mod and \
        os.path.isfile(bnd_names_file) and os.path.getmtime(bnd_names_file) >= mesh_file_last_mod :
       sys.exit(0)
 
@@ -64,21 +66,45 @@ try:
         name = data[2].strip('"')
         if int(data[0]) == 3:
           vol_markers.append(name)
-          vol_marker_ids.append(int(data[1]))
+          vol_ids.append(int(data[1]))
         elif int(data[0]) == 2:
-          bnd_markers.append(name)
-          bnd_ids.append(int(data[1]))
+          srf_markers.append(name)
+          srf_ids.append(int(data[1]))
+        elif int(data[0]) == 1:
+          lin_markers.append(name)
+          lin_ids.append(int(data[1]))
 
         num -= 1
+
 except IOError as e:
-  print "Mesh file " + mesh_base_filename + ".msh could not be loaded."
+  print "Mesh file " + mesh_filename + " could not be loaded."
   print "Details: ERR#{0}: {1}".format(e.errno, e.strerror)
   sys.exit(-1)
 
-with open(mat_names_file, "wt") as f:
-  for idx, name in zip(vol_marker_ids, vol_markers):
-    print>> f, idx, name
+if len(vol_markers) > 0:
+  # 3D mesh
 
-with open(bnd_names_file, "wt") as f:
-  for idx, name in zip(bnd_ids, bnd_markers):
-    print>> f, idx, name
+  assert len(srf_markers) > 0
+  assert len(lin_markers) == 0
+
+  with open(reg_names_file, "wt") as f:
+    for idx, name in zip(vol_ids, vol_markers):
+      print>> f, idx, name
+
+  with open(bnd_names_file, "wt") as f:
+    for idx, name in zip(srf_ids, srf_markers):
+      print>> f, idx, name
+
+else:
+  # 2D mesh
+
+  assert len(srf_markers) > 0
+  assert len(lin_markers) > 0
+
+  with open(reg_names_file, "wt") as f:
+    for idx, name in zip(srf_ids, srf_markers):
+      print>> f, idx, name
+
+  with open(bnd_names_file, "wt") as f:
+    for idx, name in zip(lin_ids, lin_markers):
+      print>> f, idx, name
