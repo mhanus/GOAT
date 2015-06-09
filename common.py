@@ -15,13 +15,12 @@ backend = dolfin.parameters.linear_algebra_backend = "PETSc"
 
 dolfin_version_id = "".join(dolfin_common.dolfin_version().split('.')[0:2])
 
-if int(dolfin_version_id) < 12:
-  print "At least DOLFIN 1.2.0 is required."
+if int(dolfin_version_id) < 15:
+  print "At least DOLFIN 1.5.0 is required."
   sys.exit(-1)
 if not has_linear_algebra_backend(backend):
   print "DOLFIN has not been configured with", backend, "support."
   sys.exit(-1)
-
 
 #------------------------------------------------------------------------------#
 #                             ARGUMENT CHECKING                                #
@@ -29,29 +28,11 @@ if not has_linear_algebra_backend(backend):
 
 from argparse import ArgumentTypeError
 
-def check_file_name(name):
-  if name != "" and not os.path.isfile(name):
-    raise ArgumentTypeError("%r is not a valid file name" % name)
-  return name
-
-def check_folder_name(name):
-  if name != "" and not os.path.isdir(name):
-    raise ArgumentTypeError("%r is not a valid folder name" % name)
-  return name
-
 def check_sn_order(value):
   ivalue = int(value)
   if ivalue < 0 or ivalue > 32 or (ivalue % 2) != 0:
     raise ArgumentTypeError("%r is not a valid SN order (only even positive orders up to 32 are allowed)" % value)
   return ivalue
-
-def check_scattering_order(value, SN_order=32):
-  ivalue = int(value)
-  if ivalue < 0 or ivalue > SN_order:
-    raise ArgumentTypeError("%r is not a valid scattering order (only positive orders up to the SN order are allowed)"
-                            % value)
-  return ivalue
-
 
 #------------------------------------------------------------------------------#
 #                                 MPI STUFF                                    #
@@ -138,35 +119,6 @@ def MPI_min(arg,ax=None):
   else:
     return rout
 
-
-def MPI_local_range(N):
-  if int(dolfin_version_id) < 14:
-    return dolfin_common.MPI.local_range(N)
-  else:
-    return dolfin_common.MPI.compute_local_range(comm.rank, N, comm.size)
-
-def MPI_index(index, N):
-  """
-  Return which process owns index (inverse of local_range) and local position of the index at that process.
-
-  :param int index: global index
-  :param int N: length of the array split between processes
-  :return: (owner, local_index) tuple
-  :rtype: int, int
-  """
-  assert index < N
-
-  # compute number of items per process and remainder
-  n,r = divmod(N, comm.size)
-
-  # first r processes own n+1 indices
-  if index < r*(n+1):
-    return divmod(index, n+1)
-
-  # remaining processes own n indices
-  rem_owner, loc_idx = divmod(index - r*(n+1), n)
-  return r + rem_owner, loc_idx
-
 #------------------------------------------------------------------------------#
 #                            CONVERGENCE CHECKING                              #
 #------------------------------------------------------------------------------#  
@@ -175,10 +127,6 @@ delta = lambda x,y: MPI_max(numpy.linalg.norm( x - y, ord=numpy.Inf ))\
                    / MPI_max(numpy.linalg.norm( x, ord=numpy.Inf ))
 
 delta0 = lambda x,y:  numpy.linalg.norm( x - y, ord=numpy.Inf ) / numpy.linalg.norm( x, ord=numpy.Inf )
-
-delta0_dict = lambda x,y: max(map(delta0, x.itervalues(), y.itervalues()))
-delta0_list_dict = lambda x,y: max(map(lambda a,b: abs((a-b)/b), x.itervalues(), y.itervalues()))  
-
 
 #------------------------------------------------------------------------------#
 #                                OTHER UTILITIES                               #
@@ -203,6 +151,35 @@ def printoptions(strip_zeros=True, **kwargs):
   numpy.set_printoptions(**original)
   arrayprint.FloatFormat.__call__ = origcall
 
+def print_timings(timings_table, screen=True, txt_file="", tex_file=""):
+  if screen:
+    print pid + "\n\n" + timings_table.str(True) + "\n"
+
+  if txt_file:
+    timings_table_str = pid + "\n\n" + timings_table.str(True)
+    timings_table_str = comm.gather(timings_table_str, root=0)
+
+    if comm.rank == 0:
+      timings_table_str = "\n___________________________________________________________\n".join(timings_table_str)
+
+      try:
+        with open(txt_file, "wt") as f:
+          print>> f, timings_table_str
+      except Exception as e:
+        print "Writing timing results to {} failed: {}".format(txt_file, e)
+
+  if tex_file:
+    timings_table_tex = pid + "\n\n" + timings_table.str_latex()
+    timings_table_tex = comm.gather(timings_table_tex, root=0)
+
+    if comm.rank == 0:
+      timings_table_tex = "\n___________________________________________________________\n".join(timings_table_tex)
+
+      try:
+        with open(tex_file, "wt") as f:
+          print>> f, timings_table_tex
+      except Exception as e:
+        print "Writing timing results to {} failed: {}".format(tex_file, e)
 
 #------------------------------------------------------------------------------#
 #                                ERROR PRINTOUT                                #
@@ -217,13 +194,13 @@ def coupled_solver_error(location, task, reason):
   s += "\n\n"
   s += "*** -------------------------------------------------------------------------"
   s += "\n"
-  s += "*** Coupled solver encountered an error. If you are not able to resolve this "
+  s += "*** GOAT solver encountered an error. If you are not able to resolve this "
   s += "\n"
   s += "*** issue using the information listed below, you can ask for help at"
   s += "\n"
   s += "***"
   s += "\n"
-  s += "***     mhanus@kma.zcu.cz"
+  s += "***     mhanus@tamu.edu"
   s += "\n"
   s += "***"
   s += "\n"
@@ -269,3 +246,4 @@ def coupled_solver_error(location, task, reason):
 
   print s
   sys.exit(-1)
+

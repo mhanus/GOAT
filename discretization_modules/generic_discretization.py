@@ -41,14 +41,14 @@ class Discretization(object):
     try:
       self.mesh = problem.mesh_module.mesh
       self.boundaries = problem.mesh_module.boundaries
-      self.mesh_regions = problem.mesh_module.regions
+      self.cell_regions = problem.mesh_module.regions
 
     except AttributeError:
       if self.verb > 1: print pid + "  mesh data"
       self.mesh = Mesh(problem.mesh_files.mesh)
 
       if self.verb > 1: print pid + "  physical data"
-      self.mesh_regions = MeshFunction("size_t", self.mesh, problem.mesh_files.physical_regions)
+      self.cell_regions = MeshFunction("size_t", self.mesh, problem.mesh_files.physical_regions)
 
       if self.verb > 1: print pid + "  boundary data"
       self.boundaries = MeshFunction("size_t", self.mesh, problem.mesh_files.facet_regions)
@@ -75,7 +75,7 @@ class Discretization(object):
     dofmap = self.V0.dofmap()
     self.local_ndof0 = dofmap.local_dimension("owned")
 
-    assert self.mesh_regions.size == self.local_ndof0
+    assert self.cell_regions.size == self.local_ndof0
 
   def __create_cell_dof_mapping(self, dofmap):
     """
@@ -218,7 +218,7 @@ class Discretization(object):
 
     File(os.path.join(self.vis_folder, "mesh.pvd"), "compressed") << self.mesh
     File(os.path.join(self.vis_folder, "boundaries.pvd"), "compressed") << self.boundaries
-    File(os.path.join(self.vis_folder, "mesh_regions.pvd"), "compressed") << self.mesh_regions
+    File(os.path.join(self.vis_folder, "mesh_regions.pvd"), "compressed") << self.cell_regions
 
     # Create MeshFunction to hold cell process rank
     processes = CellFunction('size_t', self.mesh, comm.rank)
@@ -227,9 +227,14 @@ class Discretization(object):
   def print_diagnostics(self):
     print comm.rank, self.mesh.num_entities(self.mesh.topology().dim())
 
-    print comm.rank, self.V0.dofmap().ownership_range()
-    print comm.rank, numpy.min(self.V0.dofmap().collapse(self.mesh)[1].values()), \
-          numpy.max(self.V0.dofmap().collapse(self.mesh)[1].values())
+    dofmap = self.V0.dofmap()
+
+    print comm.rank, dofmap.ownership_range()
+    print comm.rank, numpy.min(dofmap.collapse(self.mesh)[1].values()), \
+          numpy.max(dofmap.collapse(self.mesh)[1].values())
+
+    print "#Owned by {}: {}".format(comm.rank, dofmap.local_dimension("owned"))
+    print "#Unowned by {}: {}".format(comm.rank, dofmap.local_dimension("unowned"))
 
     for cell in entities(self.mesh, self.mesh.topology().dim()):
-      print comm.rank, cell.index(), self.V0.dofmap().tabulate_entity_dofs(self.mesh.topology().dim(), cell.index())
+      print comm.rank, cell.index(), dofmap.tabulate_entity_dofs(self.mesh.topology().dim(), cell.index())

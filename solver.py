@@ -89,8 +89,7 @@ t_init.stop()
 #
 
 init_timings_table = dolfin_common.timings(True)
-if args.verbosity > 0:
-  print pid+"\n\n"+init_timings_table.str(True)+"\n"
+print_timings(init_timings_table, args.verbosity > 0)
 
 
 
@@ -98,31 +97,9 @@ if args.verbosity > 0:
 # FINAL TIMINGS
 #
 sln_timings_table = dolfin_common.timings(True)
-
-sln_timings_table_str = pid + "\n\n" + sln_timings_table.str(True)
-sln_timings_table_str = comm.gather(sln_timings_table_str, root=0)
-sln_timings_table_tex = pid + "\n\n" + sln_timings_table.str_latex()
-sln_timings_table_tex = comm.gather(sln_timings_table_tex, root=0)
-
-init_timings_table_str = pid + "\n\n" + init_timings_table.str(True)
-init_timings_table_str = comm.gather(init_timings_table_str, root=0)
-init_timings_table_tex = pid + "\n\n" + init_timings_table.str_latex()
-init_timings_table_tex = comm.gather(init_timings_table_tex, root=0)
-
-if comm.rank == 0:
-  sln_timings_table_str = "\n___________________________________________________________\n".join(sln_timings_table_str)
-  sln_timings_table_tex = "\n___________________________________________________________\n".join(sln_timings_table_tex)
-  init_timings_table_str= "\n___________________________________________________________\n".join(init_timings_table_str)
-  init_timings_table_tex= "\n___________________________________________________________\n".join(init_timings_table_tex)
-
-  print sln_timings_table_str
-
-  try:
-    with open(os.path.join(PRD.folder, "timings.txt"), "wt") as f:
-      print>>f, init_timings_table_str
-      print>>f, sln_timings_table_str
-    with open(os.path.join(PRD.folder, "timings.tex"), "wt") as f:
-      print>>f, init_timings_table_tex
-      print>>f, sln_timings_table_tex
-  except Exception as e:
-    print "Writing final results failed: {}".format(e)
+print_timings( init_timings_table,
+               False,
+               os.path.join(PRD.folder, "init_timings.txt"), os.path.join(PRD.folder, "init_timings.tex") )
+print_timings( sln_timings_table,
+               args.verbosity > 0,
+               os.path.join(PRD.folder, "sln_timings.txt"), os.path.join(PRD.folder, "sln_timings.tex") )

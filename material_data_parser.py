@@ -3,20 +3,20 @@ import numpy
 
 __author__ = 'Milan'
 
-xs_names = \
-{
-  'St': 'St',
-  'Ss': 'Ss',
-  'nSf': 'nSf',
-  'chi': 'chi',
-  'Q': 'Q'
-}
-
 def parse_material(data_file_name):
   xs = ''
   new_xs = ''
   xs_data = dict()
   data_buffer = []
+
+  xs_names = \
+    {
+      'St': 'St',
+      'Ss': 'Ss',
+      'nSf': 'nSf',
+      'chi': 'chi',
+      'Q': 'Q'
+    }
 
   with open(data_file_name, 'r') as f:
     for line in f:
@@ -84,10 +84,12 @@ def parse_material(data_file_name):
         #TODO: Unexpected data error
         raise
 
+  St = xs_data['St']
+  xs_data['D'] = 1/St
+
   # If scattering is present, add the auxiliary pseudo-xs needed during assembling
   # TODO: Correct multigroup support (currently inter-group scattering is neglected
   try:
-    St = xs_data['St']
     Ss = xs_data['Ss']
   except KeyError:
     # Set scattering order to 0 to indicate no scattering

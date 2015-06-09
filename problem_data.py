@@ -1,14 +1,12 @@
 from collections import defaultdict
-import os, imp
+import os, imp, sys
 from dolfin.cpp.common import warning, Timer
-import sys
 from dolfin.cpp.io import File
 import numpy
 from common import pid, coupled_solver_error, mkdir_p, comm
 from material_data_parser import parse_material
 
 __author__ = 'Milan'
-
 
 class MeshFiles:
   def __init__(self, folder, mesh_base_name):
@@ -297,7 +295,7 @@ class ProblemData(object):
 
     self.used_regions = numpy.empty(len(reg_set), dtype=numpy.int)
 
-    matname_reg_map = defaultdict(list)
+    self.matname_reg_map = defaultdict(list)
     num_reg_dofs = numpy.bincount(numpy.asarray(regions, dtype=numpy.int))
 
     i = 0
@@ -312,13 +310,14 @@ class ProblemData(object):
           mat_name = phys_name
 
         # Generate mapping from material name to corresponding region numbers (each material corresponds to one or more
-        # regions with one set of cross-sections).
-        matname_reg_map[mat_name].append(reg)
+        # regions with one set of cross-sections). In case of mat_name == phys_name,
+        # len(self.matname_reg_map[mat_name] == 1.
+        self.matname_reg_map[mat_name].append(reg)
 
     assert i == len(reg_set)
 
     # List of material names (str)
-    self.material_names = matname_reg_map.keys()
+    self.material_names = self.matname_reg_map.keys()
     self.num_mat = len(self.material_names)
 
     # Mapping from regions to material numbers (positions in the `materials` list).
@@ -327,11 +326,11 @@ class ProblemData(object):
     self.reg_mat_map.fill(-1) # unset elements would correspond to region numbers that are not used in actual mesh
                               # partition
 
-    for mat, (mat_name, regs) in enumerate(matname_reg_map.iteritems()):
+    for mat, (mat_name, regs) in enumerate(self.matname_reg_map.iteritems()):
       # convert each list in matname_reg_map to numpy.array so that it can be used for efficient indexing
-      matname_reg_map[mat_name] = numpy.fromiter(regs, dtype=numpy.int)
+      self.matname_reg_map[mat_name] = numpy.fromiter(regs, dtype=numpy.int)
 
-      regs_array = matname_reg_map[mat_name]
+      regs_array = self.matname_reg_map[mat_name]
       self.reg_mat_map[regs_array] = mat
 
 class CoreData(object):
@@ -408,6 +407,9 @@ class CoreData(object):
     return -1
 
   def info(self):
+    if comm.rank != 0:
+      return
+
     print "Core power info:"
     print "  P_eff = {}".format(self.power)
     print "  P_tot = {}".format(self.power/self.core_fraction)
@@ -453,6 +455,17 @@ class BoundaryData(object):
     self.vacuum_boundaries = []
     self.reflective_boundaries = []
     self.incoming_fluxes = defaultdict(list)
+
+  def info(self):
+    if comm.rank != 0:
+      return
+
+    print "Boundary names -> idx:"
+    print " ", self.boundary_names_idx_map
+    print "\nVacuum boundaries:", self.vacuum_boundaries
+    print "\nReflective boundaries:", self.reflective_boundaries
+    print "\nIncoming fluxes:"
+    print self.incoming_fluxes
 
   def all_vacuum(self):
     return len(self.reflective_boundaries) == 0 and len(self.incoming_fluxes) == 0
@@ -527,7 +540,8 @@ class BoundaryData(object):
         self.incoming_fluxes[idx] = numpy.array(self.incoming_fluxes[idx])
 
         # Check consistency of incoming fluxes; intended use of attributes M, G (number of discrete
-        # directions/groups) is to ensure consistency between specified boundary data and the Discretization object
+        # directions/groups) is to ensure consistency between specified boundary data and the Discretization object (
+        # possibly repeating single group-flux vector loaded here M-times and dividing by 4pi (isotropic incoming flux).
         try:
           assert self.incoming_fluxes[idx].shape == (self.M, self.G)
         except AttributeError:
