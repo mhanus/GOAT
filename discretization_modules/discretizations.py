@@ -28,8 +28,6 @@ class DiffusionDiscretization(Discretization):
 
 class SNDiscretization(Discretization):
   def __init__(self, problem, SN_order, verbosity=0):
-    from dolfin import VectorFunctionSpace
-
     super(SNDiscretization, self).__init__(problem, verbosity)
 
     if self.verb > 1: print0("Obtaining angular discretization data")

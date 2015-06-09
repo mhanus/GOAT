@@ -1,7 +1,4 @@
-import os
-from itertools import izip
-
-import numpy
+import os, numpy
 from dolfin import FunctionSpace, parameters, compile_extension_module
 from dolfin.cpp.io import File
 from dolfin.cpp.common import Timer, Parameters, IntArray, DoubleArray
@@ -193,7 +190,7 @@ class Discretization(object):
     try:
       self._local_cell_dof_map
     except AttributeError:
-      self.__create_cell_dof_mapping()
+      self.__create_cell_dof_mapping(self.V0.dofmap())
     return self._local_cell_dof_map
 
   @property

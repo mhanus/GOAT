@@ -3,6 +3,7 @@ import numpy
 
 __author__ = 'Milan'
 
+# noinspection PyUnboundLocalVariable
 def parse_material(data_file_name):
   xs = ''
   new_xs = ''

@@ -22,6 +22,8 @@ class MeshFiles:
     self.mat_names = os.path.join(folder, "mat_names.txt")
     self.bnd_names = os.path.join(folder, "bnd_names.txt")
 
+
+# noinspection PyAttributeOutsideInit,PyUnboundLocalVariable
 class ProblemData(object):
   def __init__(self, problem_name, mesh_base_name="", verbosity=0):
     super(ProblemData, self).__init__()
@@ -35,6 +37,8 @@ class ProblemData(object):
 
     self.verb = verbosity
     self.name = problem_name
+
+    self.xsd = dict()
 
     self.mesh_base_name = mesh_base_name
     if not self.mesh_base_name:
@@ -76,7 +80,7 @@ class ProblemData(object):
       
       try:
         self.region_physical_name_map = self.mesh_module.region_map
-      except:
+      except AttributeError:
         pass
   
       # try to get bc data from boundary_id-to-boundary_name map and a file with boundary_name-to-bc correspondences
@@ -88,7 +92,7 @@ class ProblemData(object):
   
       try:
         self.reg_name_mat_name_map = self.mesh_module.material_map
-      except:
+      except AttributeError:
         pass
 
 
@@ -158,9 +162,12 @@ class ProblemData(object):
   def load_core_and_bc_data(self):
     data_file_name = os.path.join(self.folder, "core.dat")
 
-    lines = []
-    with open(data_file_name) as f:
-      lines = f.readlines()
+    try:
+      with open(data_file_name) as f:
+        lines = f.readlines()
+    except IOError:
+      warning("No file with core geometry data and b.c. specification has been found - default settings will be used.")
+      return
 
     l = -1
     while l < len(lines)-1:
@@ -234,13 +241,14 @@ class ProblemData(object):
                                  "Invalid number of source directions ({}, expected {})".format(xsd.shape[0], M))
 
         try:
-          xs_array = self.xsd[xs]
+          self.xsd[xs]
         except KeyError:
           shape = (self.num_mat,) + xsd.shape
           self.xsd[xs] = numpy.zeros(shape)
 
         self.xsd[xs][mat] = xsd
 
+  # noinspection PyTypeChecker
   def get(self, xs, xs_fun, gto=0, gfrom=0, k=0, vis=False):
     assert (0 <= gto < self.G)
     assert (0 <= gfrom < self.G)
@@ -265,19 +273,19 @@ class ProblemData(object):
       return False
 
     if vis:
-      id = xs
+      xs_label = xs
 
       if self.G > 0:
-        id += "_{}".format(gto)
+        xs_label += "_{}".format(gto)
 
         if xsd.ndim == 3:
-          id += "_{}".format(gfrom)
+          xs_label += "_{}".format(gfrom)
 
       if self.scattering_order > 1 and xsd.ndim == 4:
-        id += "_{}".format(k)
+        xs_label += "_{}".format(k)
 
-      xs_fun.rename(id, id)
-      File(os.path.join(self.xs_vis_folder, id + ".pvd"), "compressed") << xs_fun
+      xs_fun.rename(xs_label, xs_label)
+      File(os.path.join(self.xs_vis_folder, xs_label + ".pvd"), "compressed") << xs_fun
 
     return True
 

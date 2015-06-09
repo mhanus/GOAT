@@ -60,7 +60,7 @@ if args.print_actual_parameters:
 #------------------------------------------------------------------------------#
 
 from discretization_modules.discretizations import SNDiscretization as Discretization
-from flux_modules.elliptic_sn_flux_module import EllipticSNFluxModule as FluxModule
+#from flux_modules.elliptic_sn_flux_module import EllipticSNFluxModule as FluxModule
 from problem_data import ProblemData
 
 
@@ -79,7 +79,7 @@ if args.verbosity > 1: print "Process {0}: initializing...".format(comm.rank)
 
 PRD = ProblemData(args.problem_name, args.mesh, args.verbosity)
 DD = Discretization(PRD, args.SN_order, args.verbosity)
-FM = FluxModule(PRD, DD, args.verbosity)
+#FM = FluxModule(PRD, DD, args.verbosity)
 
 t_init.stop()
 

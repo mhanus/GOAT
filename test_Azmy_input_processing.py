@@ -125,60 +125,63 @@ assert PRD.get('nSf', None, vis=True) == False
 
 Q_array = Q_fun.vector().array()
 M2_dofs = DD.local_cell_dof_map(numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M2']))
+# noinspection PyTypeChecker
 assert M2_dofs.size == 0 or numpy.all(Q_array[M2_dofs] == 0)
 
 M1_dofs = DD.local_cell_dof_map(numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M1']))
+# noinspection PyTypeChecker
 assert M2_dofs.size == 0 or numpy.all(Q_array[M1_dofs] == 1/(4*numpy.pi))
 
 #=======================================================================================================================
 # TEST 1-3 - test mesh data imported from mesh modules
 #
 
+# noinspection PyTypeChecker
 def test_mesh_module(idx):
   t_init = dolfin_common.Timer("Init {}".format(idx))
 
-  PRD = ProblemData(args.problem_name, "mesh{}".format(idx), args.verbosity)
-  DD = Discretization(PRD, args.SN_order, args.verbosity)
+  prd = ProblemData(args.problem_name, "mesh{}".format(idx), args.verbosity)
+  dd = Discretization(prd, args.SN_order, args.verbosity)
 
   t_init.stop()
 
   init_timings_table = dolfin_common.timings(True)
   print_timings( init_timings_table, args.verbosity > 0,
-                 os.path.join(PRD.out_folder, "timings{}.txt".format(idx)))
+                 os.path.join(prd.out_folder, "timings{}.txt".format(idx)))
 
-  PRD.core.info()
-  PRD.bc.info()
+  prd.core.info()
+  prd.bc.info()
 
-  assert PRD.G == 1
-  assert PRD.scattering_order == 1
+  assert prd.G == 1
+  assert prd.scattering_order == 1
 
-  DD.print_diagnostics()
-  DD.visualize_mesh_data()
+  dd.print_diagnostics()
+  dd.visualize_mesh_data()
 
-  St_fun = Function(DD.V0)
-  D_fun = Function(DD.V0)
-  Ss_fun = Function(DD.V0)
-  C_fun = Function(DD.V0)
-  Q_fun = Function(DD.V0)
+  St = Function(dd.V0)
+  D = Function(dd.V0)
+  Ss = Function(dd.V0)
+  C = Function(dd.V0)
+  Q = Function(dd.V0)
 
-  PRD.get('St', D_fun, vis=True)
-  PRD.get('D', St_fun, vis=True)
-  PRD.get('Ss', Ss_fun, vis=True)
-  PRD.get('C', C_fun, vis=True)
-  PRD.get('Q', Q_fun, vis=True)
+  prd.get('St', D, vis=True)
+  prd.get('D', St, vis=True)
+  prd.get('Ss', Ss, vis=True)
+  prd.get('C', C, vis=True)
+  prd.get('Q', Q, vis=True)
 
-  assert PRD.get('nSf', None, vis=True) == False
+  assert prd.get('nSf', None, vis=True) == False
 
   # Assert correct source distribution
 
-  Q_array = Q_fun.vector().array()
-  M2_dofs = DD.local_cell_dof_map(numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M2']))
+  Q_array = Q.vector().array()
+  M2_dofs = dd.local_cell_dof_map(numpy.in1d(dd.cell_regions, prd.matname_reg_map['M2']))
   assert M2_dofs.size == 0 or numpy.all(Q_array[M2_dofs] == 0)
 
-  M1_dofs = DD.local_cell_dof_map(numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M1']))
+  M1_dofs = dd.local_cell_dof_map(numpy.in1d(dd.cell_regions, prd.matname_reg_map['M1']))
   assert M2_dofs.size == 0 or numpy.all(Q_array[M1_dofs] == 1/(4*numpy.pi))
 
-  return PRD.bc.vacuum_boundaries, PRD.bc.reflective_boundaries, PRD.bc.incoming_fluxes
+  return prd.bc.vacuum_boundaries, prd.bc.reflective_boundaries, prd.bc.incoming_fluxes
 
 #-----------------------------------------------------------------------------------------------------------------------
 
