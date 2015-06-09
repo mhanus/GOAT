@@ -1,0 +1,20 @@
+*
+* Isotropic source
+*
+
+Q
+    1
+
+*
+* Total XSEC
+*
+
+St
+    1
+
+*
+* Scattering XSEC
+*
+
+Ss
+    0.5
