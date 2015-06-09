@@ -49,3 +49,9 @@ target/
 # General
 *~
 .DS_Store
+
+PROBLEMS/*/reg_names.txt
+PROBLEMS/*/bnd_names.txt
+PROBLEMS/*/mat_names.txt
+PROBLEMS/*/*.msh
+PROBLEMS/*/*.xml

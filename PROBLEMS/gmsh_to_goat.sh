@@ -18,7 +18,7 @@ if [ $? -ne 0 ]; then
     echo "Dos2unix not performed."
 fi
 
-dolfin-convert $problem/$mesh.msh $mesh.xml
+dolfin-convert $problem/$mesh.msh $problem/$mesh.xml
 
 if [ $? -ne 0 ]; then
     echo "Fatal error occured - GOAT meshes not produced."
