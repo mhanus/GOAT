@@ -20,7 +20,7 @@ def get_parameters():
   return params
 
 class Discretization(object):
-  def __init__(self, problem, mesh_base_name="", verbosity=0):
+  def __init__(self, problem, verbosity=0):
     """
 
     :param ProblemData problem:
@@ -30,7 +30,7 @@ class Discretization(object):
     self.parameters = parameters["discretization"]
 
     self.verb = verbosity
-    self.visualizations_folder = problem.vis_folder
+    self.vis_folder = os.path.join(problem.out_folder, "MESH")
     self.core = problem.core
     self.G = problem.G
 
@@ -39,26 +39,19 @@ class Discretization(object):
     t_load = Timer("DD: Data loading")
 
     try:
-      self.mesh = problem.mesh_spec.mesh
-      self.boundaries = problem.mesh_spec.boundaries
-      self.mesh_regions = problem.mesh_spec.regions
+      self.mesh = problem.mesh_module.mesh
+      self.boundaries = problem.mesh_module.boundaries
+      self.mesh_regions = problem.mesh_module.regions
 
     except AttributeError:
-      if not mesh_base_name:
-        mesh_base_name = problem.name
-
-      mesh_file = os.path.join(problem.folder, mesh_base_name + ".xml")
-      physical_regions_file = os.path.join(problem.folder, mesh_base_name + "_physical_region.xml")
-      facet_regions_file = os.path.join(problem.folder, mesh_base_name + "_facet_region.xml")
-
       if self.verb > 1: print pid + "  mesh data"
-      self.mesh = Mesh(mesh_file)
+      self.mesh = Mesh(problem.mesh_files.mesh)
 
       if self.verb > 1: print pid + "  physical data"
-      self.mesh_regions = MeshFunction("size_t", self.mesh, physical_regions_file)
+      self.mesh_regions = MeshFunction("size_t", self.mesh, problem.mesh_files.physical_regions)
 
       if self.verb > 1: print pid + "  boundary data"
-      self.boundaries = MeshFunction("size_t", self.mesh, facet_regions_file)
+      self.boundaries = MeshFunction("size_t", self.mesh, problem.mesh_files.facet_regions)
 
     assert self.mesh
     assert self.boundaries.array().size > 0
@@ -223,13 +216,13 @@ class Discretization(object):
     timer = Timer("DD: Mesh data visualization")
     if self.verb > 2: print0("Visualizing mesh data")
 
-    File(os.path.join(self.visualizations_folder, "mesh.pvd"), "compressed") << self.mesh
-    File(os.path.join(self.visualizations_folder, "boundaries.pvd"), "compressed") << self.boundaries
-    File(os.path.join(self.visualizations_folder, "mesh_regions.pvd"), "compressed") << self.mesh_regions
+    File(os.path.join(self.vis_folder, "mesh.pvd"), "compressed") << self.mesh
+    File(os.path.join(self.vis_folder, "boundaries.pvd"), "compressed") << self.boundaries
+    File(os.path.join(self.vis_folder, "mesh_regions.pvd"), "compressed") << self.mesh_regions
 
     # Create MeshFunction to hold cell process rank
     processes = CellFunction('size_t', self.mesh, comm.rank)
-    File(os.path.join(self.visualizations_folder, "mesh_partitioning.pvd"), "compressed") << processes
+    File(os.path.join(self.vis_folder, "mesh_partitioning.pvd"), "compressed") << processes
 
   def print_diagnostics(self):
     print comm.rank, self.mesh.num_entities(self.mesh.topology().dim())

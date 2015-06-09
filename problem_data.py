@@ -9,8 +9,23 @@ from material_data_parser import parse_material
 
 __author__ = 'Milan'
 
+
+class MeshFiles:
+  def __init__(self, folder, mesh_base_name):
+    self.mesh = os.path.join(folder, mesh_base_name + ".xml")
+    self.physical_regions = os.path.join(folder, mesh_base_name + "_physical_region.xml")
+    self.facet_regions = os.path.join(folder, mesh_base_name + "_facet_region.xml")
+    
+    assert os.path.isfile(self.mesh) and \
+           os.path.isfile(self.physical_regions) and \
+           os.path.isfile(self.facet_regions)
+
+    self.reg_names = os.path.join(folder, "reg_names.txt")
+    self.mat_names = os.path.join(folder, "mat_names.txt")
+    self.bnd_names = os.path.join(folder, "bnd_names.txt")
+
 class ProblemData(object):
-  def __init__(self, problem_name, mesh_module="", verbosity=0):
+  def __init__(self, problem_name, mesh_base_name="", verbosity=0):
     super(ProblemData, self).__init__()
 
     self.core = CoreData()
@@ -23,65 +38,81 @@ class ProblemData(object):
     self.verb = verbosity
     self.name = problem_name
 
-    self.folder = os.path.abspath(os.path.join('PROBLEMS', problem_name))
-    self.vis_folder = os.path.join(self.folder, "VIS")
+    self.mesh_base_name = mesh_base_name
+    if not self.mesh_base_name:
+      self.mesh_base_name = self.name
 
-    mkdir_p(self.vis_folder)
+    self.folder = os.path.abspath(os.path.join('PROBLEMS', problem_name))
+    self.out_folder = os.path.join(self.folder, "OUT", mesh_base_name)
+    self.xs_vis_folder = os.path.join(self.out_folder, "XS")
+
+    mkdir_p(self.xs_vis_folder)
 
     self.region_physical_name_map = dict()
     self.reg_name_mat_name_map = dict()
     boundary_physical_name_map = dict()
 
-    mesh_spec = None
-    if mesh_module != "":
+    # Two alternative ways of specifying a mesh:
+    #   1:  Python module
+    #   2:  set of Dolfin mesh files + optional helper files defining region/material/boundary maps
+    #
+    self.mesh_module = None
+    self.mesh_files = None
+    
+    try:
+      # Try to import a mesh module
+      
+      self.mesh_module = self.mesh_data_from_module(self.mesh_base_name)
+    
+    except (ImportError, IOError):
+      # If failed, Dolfin mesh file structure is expected
+      
+      self.mesh_files = MeshFiles(self.folder, mesh_base_name)
+      
+      self.region_physical_names_from_file(self.mesh_files.reg_names)
+      self.reg_names_to_material_names_from_file(self.mesh_files.mat_names)
+      self.bc = BoundaryData.from_file(self.mesh_files.bnd_names)
+    
+    else:
+      # Import region/material/boundary maps from the mesh module 
+      
       try:
-        mesh_spec = self.mesh_data_from_module(mesh_module)
-      except (ImportError, IOError):
-        # TODO: error importing mesh_module
-        sys.exit(-1)
-
-      try:
-        self.region_physical_name_map = mesh_spec.region_map
+        self.region_physical_name_map = self.mesh_module.region_map
       except:
         pass
-
-
+  
       # try to get bc data from boundary_id-to-boundary_name map and a file with boundary_name-to-bc correspondences
       try:
-        boundary_physical_name_map = mesh_spec.boundary_map
+        boundary_physical_name_map = self.mesh_module.boundary_map
       finally:
         # use either the boundary_physical_name_map, or - if not set - assume all-vacuum bc
         self.bc = BoundaryData.from_boundary_names_map(boundary_physical_name_map)
-
+  
       try:
-        self.reg_name_mat_name_map = mesh_spec.material_map
+        self.reg_name_mat_name_map = self.mesh_module.material_map
       except:
         pass
 
-    else:
-      self.region_physical_names_from_file( os.path.join(self.folder, "reg_names.txt") )
-      self.reg_names_to_material_names_from_file( os.path.join(self.folder, "mat_names.txt") )
-      self.bc = BoundaryData.from_file( os.path.join(self.folder, "bnd_names.txt") )
 
     self.load_core_and_bc_data()
 
     # Check if bcs have been loaded from 'core.dat'; if not, try loading them directly from the mesh module
-    if mesh_spec is not None:
+    if self.mesh_module is not None:
       if len(self.bc.vacuum_boundaries) == 0:
         try:
-          self.bc.vacuum_boundaries = mesh_spec.vacuum_boundaries
+          self.bc.vacuum_boundaries = self.mesh_module.vacuum_boundaries
         except AttributeError:
           pass
 
       if len(self.bc.reflective_boundaries) == 0:
         try:
-          self.bc.reflective_boundaries = mesh_spec.reflective_boundaries
+          self.bc.reflective_boundaries = self.mesh_module.reflective_boundaries
         except AttributeError:
           pass
 
       if len(self.bc.incoming_fluxes) == 0:
         try:
-          self.bc.incoming_fluxes = mesh_spec.incoming_fluxes
+          self.bc.incoming_fluxes = self.mesh_module.incoming_fluxes
         except AttributeError:
           pass
 
@@ -248,7 +279,7 @@ class ProblemData(object):
         id += "_{}".format(k)
 
       xs_fun.rename(id, id)
-      File(os.path.join(self.vis_folder, id + ".pvd"), "compressed") << xs_fun
+      File(os.path.join(self.xs_vis_folder, id + ".pvd"), "compressed") << xs_fun
 
     return True
 
