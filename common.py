@@ -38,12 +38,10 @@ def check_sn_order(value):
 #                                 MPI STUFF                                    #
 #------------------------------------------------------------------------------#
 
+from dolfin.cpp.common import MPI
 
-from mpi4py.MPI import __TypeDict__, COMM_WORLD, SUM, MIN, MAX
-
-MPI_type = lambda array: __TypeDict__[array.dtype.char]
-comm = COMM_WORLD
-pid = "Process " + str(comm.rank) + ": " if comm.size > 1 else ""
+comm = dolfin_common.mpi_comm_world()
+pid = "Process " + str(MPI.rank(comm)) + ": " if MPI.size(comm) > 1 else ""
 
 
 def mkdir_p(path):
@@ -55,76 +53,17 @@ def mkdir_p(path):
     else: 
       raise
 
-def print0(x, end="\n", _comm=COMM_WORLD):
-  if _comm.rank == 0:
+def print0(x, end="\n"):
+  if MPI.rank(comm) == 0:
     print str(x)+end,
 
-def MPI_sum(arg,ax=None):
-  if ax is not None:
-    r = numpy.atleast_1d(numpy.sum(arg,ax))
-  else:
-    r = numpy.atleast_1d(numpy.sum(arg))
-  rout = numpy.zeros_like(r)
-
-  comm.Allreduce([r, MPI_type(r)], [rout, MPI_type(rout)], op=SUM)
-
-  if rout.size == 1:
-    return rout[0]
-  else:
-    return rout
-
-def MPI_sum0(arg,ax=None):
-  if ax is not None:
-    r = numpy.atleast_1d(numpy.sum(arg,ax))
-  else:
-    r = numpy.atleast_1d(numpy.sum(arg))
-
-  if comm.rank == 0:
-    rout = numpy.zeros_like(r)
-  else:
-    rout = None
-
-  comm.Reduce([r, MPI_type(r)], [rout, MPI_type(rout)], op=SUM, root=0)
-
-  if rout.size == 1:
-    return rout[0]
-  else:
-    return rout
-
-def MPI_max(arg,ax=None):
-  if ax is not None:
-    r = numpy.atleast_1d(numpy.max(arg,ax))
-  else:
-    r = numpy.atleast_1d(numpy.max(arg))
-  rout = numpy.zeros_like(r)
-
-  comm.Allreduce([r, MPI_type(r)], [rout, MPI_type(rout)], op=MAX)
-
-  if rout.size == 1:
-    return rout[0]
-  else:
-    return rout
-
-def MPI_min(arg,ax=None):
-  if ax is not None:
-    r = numpy.atleast_1d(numpy.min(arg,ax))
-  else:
-    r = numpy.atleast_1d(numpy.min(arg))
-  rout = numpy.zeros_like(r)
-
-  comm.Allreduce([r, MPI_type(r)], [rout, MPI_type(rout)], op=MIN)
-
-  if rout.size == 1:
-    return rout[0]
-  else:
-    return rout
 
 #------------------------------------------------------------------------------#
 #                            CONVERGENCE CHECKING                              #
 #------------------------------------------------------------------------------#  
   
-delta = lambda x,y: MPI_max(numpy.linalg.norm( x - y, ord=numpy.Inf ))\
-                   / MPI_max(numpy.linalg.norm( x, ord=numpy.Inf ))
+delta = lambda x,y: MPI.max(comm, numpy.linalg.norm( x - y, ord=numpy.Inf ))\
+                   / MPI.max(comm, numpy.linalg.norm( x, ord=numpy.Inf ))
 
 delta0 = lambda x,y:  numpy.linalg.norm( x - y, ord=numpy.Inf ) / numpy.linalg.norm( x, ord=numpy.Inf )
 
@@ -157,9 +96,10 @@ def print_timings(timings_table, screen=True, txt_file="", tex_file=""):
 
   if txt_file:
     timings_table_str = pid + "\n\n" + timings_table.str(True)
-    timings_table_str = comm.gather(timings_table_str, root=0)
+    # timings_table_str = MPI.gather(comm, timings_table_str) # TODO: Bug in MPI.gather
+    timings_table_str = [timings_table_str]
 
-    if comm.rank == 0:
+    if MPI.rank(comm) == 0:
       timings_table_str = "\n___________________________________________________________\n".join(timings_table_str)
 
       try:
@@ -170,9 +110,10 @@ def print_timings(timings_table, screen=True, txt_file="", tex_file=""):
 
   if tex_file:
     timings_table_tex = pid + "\n\n" + timings_table.str_latex()
-    timings_table_tex = comm.gather(timings_table_tex, root=0)
+    # timings_table_tex = MPI.gather(comm, timings_table_tex) # TODO: Bug in MPI.gather
+    timings_table_tex = [timings_table_tex]
 
-    if comm.rank == 0:
+    if MPI.rank(comm) == 0:
       timings_table_tex = "\n___________________________________________________________\n".join(timings_table_tex)
 
       try:
@@ -227,7 +168,7 @@ def coupled_solver_error(location, task, reason):
   s += "\n"
   s += "*** "
   s += "Process: "
-  s += str(comm.rank) + "\n"
+  s += str(MPI.rank(comm)) + "\n"
   s += "*** "
   s += "\n"
   s += "*** "

@@ -72,7 +72,7 @@ from problem_data import ProblemData
 #
 t_init = dolfin_common.Timer("! Complete initialization phase")
 
-if args.verbosity > 1: print "Process {0}: initializing...".format(comm.rank)
+if args.verbosity > 1: print "Process {0}: initializing...".format(MPI.rank(comm))
 
 
 # Core calculation modules

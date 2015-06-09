@@ -1,7 +1,7 @@
 import os, numpy
 from dolfin import FunctionSpace, parameters, compile_extension_module
 from dolfin.cpp.io import File
-from dolfin.cpp.common import Timer, Parameters, IntArray, DoubleArray
+from dolfin.cpp.common import Timer, Parameters, IntArray, DoubleArray, MPI
 from dolfin.cpp.mesh import Mesh, CellFunction, MeshFunction, entities
 
 from common import pid, comm, print0
@@ -218,20 +218,20 @@ class Discretization(object):
     File(os.path.join(self.vis_folder, "mesh_regions.pvd"), "compressed") << self.cell_regions
 
     # Create MeshFunction to hold cell process rank
-    processes = CellFunction('size_t', self.mesh, comm.rank)
+    processes = CellFunction('size_t', self.mesh, MPI.rank(comm))
     File(os.path.join(self.vis_folder, "mesh_partitioning.pvd"), "compressed") << processes
 
   def print_diagnostics(self):
-    print comm.rank, self.mesh.num_entities(self.mesh.topology().dim())
+    print MPI.rank(comm), self.mesh.num_entities(self.mesh.topology().dim())
 
     dofmap = self.V0.dofmap()
 
-    print comm.rank, dofmap.ownership_range()
-    print comm.rank, numpy.min(dofmap.collapse(self.mesh)[1].values()), \
+    print MPI.rank(comm), dofmap.ownership_range()
+    print MPI.rank(comm), numpy.min(dofmap.collapse(self.mesh)[1].values()), \
           numpy.max(dofmap.collapse(self.mesh)[1].values())
 
-    print "#Owned by {}: {}".format(comm.rank, dofmap.local_dimension("owned"))
-    print "#Unowned by {}: {}".format(comm.rank, dofmap.local_dimension("unowned"))
+    print "#Owned by {}: {}".format(MPI.rank(comm), dofmap.local_dimension("owned"))
+    print "#Unowned by {}: {}".format(MPI.rank(comm), dofmap.local_dimension("unowned"))
 
     for cell in entities(self.mesh, self.mesh.topology().dim()):
-      print comm.rank, cell.index(), dofmap.tabulate_entity_dofs(self.mesh.topology().dim(), cell.index())
+      print MPI.rank(comm), cell.index(), dofmap.tabulate_entity_dofs(self.mesh.topology().dim(), cell.index())

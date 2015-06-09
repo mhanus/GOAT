@@ -1,6 +1,6 @@
 from collections import defaultdict
 import os, imp, sys
-from dolfin.cpp.common import warning, Timer
+from dolfin.cpp.common import warning, Timer, MPI
 from dolfin.cpp.io import File
 import numpy
 from common import pid, coupled_solver_error, mkdir_p, comm
@@ -30,7 +30,7 @@ class ProblemData(object):
 
     self.core = CoreData()
 
-    if comm.rank == 0:
+    if MPI.rank(comm) == 0:
       self.parse_material_data()
 
     comm.Barrier()
@@ -415,7 +415,7 @@ class CoreData(object):
     return -1
 
   def info(self):
-    if comm.rank != 0:
+    if MPI.rank(comm) != 0:
       return
 
     print "Core power info:"
@@ -465,7 +465,7 @@ class BoundaryData(object):
     self.incoming_fluxes = defaultdict(list)
 
   def info(self):
-    if comm.rank != 0:
+    if MPI.rank(comm) != 0:
       return
 
     print "Boundary names -> idx:"

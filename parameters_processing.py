@@ -1,7 +1,7 @@
 from collections import deque
 from dolfin.cpp.common import info
 import dolfin
-from common import comm
+from common import MPI, comm
 
 import re
 __stripper = re.compile(r"\s+=\s+")
@@ -26,7 +26,7 @@ def add_solver_parameters():
   #dolfin.parameters.add(flux_module.get_parameters())
 
 def print_info():
-  if comm.rank == 0:
+  if MPI.rank(comm) == 0:
     info(dolfin.parameters, True)
 
 def load_algebraic_solver_parameters(algebraic_solver_params_file):

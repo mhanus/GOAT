@@ -186,5 +186,5 @@ def test_mesh_module(idx):
 #-----------------------------------------------------------------------------------------------------------------------
 
 vac, ref, inc = test_mesh_module(1)
-assert (vac, ref, inc == test_mesh_module(2))
-assert (vac, ref, inc == test_mesh_module(3))
+assert (vac, ref, inc) == test_mesh_module(2)
+assert (vac, ref, inc) == test_mesh_module(3)
