@@ -3,6 +3,9 @@ import numpy
 
 __author__ = 'Milan'
 
+class NewXS(Exception):
+  pass
+
 # noinspection PyUnboundLocalVariable
 def parse_material(data_file_name):
   xs = ''
@@ -20,70 +23,51 @@ def parse_material(data_file_name):
     }
 
   with open(data_file_name, 'r') as f:
-    for line in f:
-      # Skip comments
-      if line.startswith('*'):
-        continue
+    lines = f.readlines()
 
-      try:
-        new_xs = xs_names[line.strip()]
-      except KeyError:
-        pass
+  for li, line in enumerate(lines):
+    # Skip comments and empty lines
+    if line.startswith(('*','\n')):
+      continue
 
-      # Skip any header before the first xs
-      if not new_xs:
-        continue
-
-      # If new xs has been encountered, save and reset the data buffer corresponding to the previous one (if not run
-      # for the first time, in which case no buffer exists yet)
-      if new_xs != xs:
-        if data_buffer:
-          # Transform the buffer for output
-          data_array = numpy.atleast_1d(numpy.array(data_buffer).squeeze())
-
-          # Assert consistency of xs data (or set the number of groups for the first time)
-          try:
-            assert data_array.shape[0] == G
-          except NameError:
-            G = data_array.shape[0]
-
-          if data_array.size != G:
-
-            try:
-              # Scattering
-              data_array = numpy.atleast_3d(data_array.reshape((-1,G,G)))
-            except ValueError:
-              try:
-                # Source
-                data_array = numpy.atleast_2d(data_array.reshape((-1,G)))
-              except ValueError:
-                #TODO: Invalid data format error
-                raise
-            else:
-              # Assert consistency of xs data (or set the scattering order for the first time)
-              try:
-                assert data_array.shape[0] == K
-              except NameError:
-                K = data_array.shape[0]
-
-          # Save the transformed buffer to the output dictionary
-          xs_data[xs] = data_array
-
-          # Reset the data buffer
-          data_buffer = []
-
-        xs = new_xs
-
+    try:
+      new_xs = xs_names[line.strip()]
+    except KeyError:
       # look for new data
       data = line.replace(',', ' ').replace(';', ' ').split()
-      if len(data) == 0:
-        continue
 
       try:
         data_buffer.append(map(float, data))
       except ValueError:
-        #TODO: Unexpected data error
+        # TODO: Unexpected data error
         raise
+
+    if new_xs != xs or li == len(lines)-1:
+      # If new xs has been encountered, save and reset the data buffer corresponding to the previous one (if not run
+      # for the first time, in which case no buffer exists yet)
+      if data_buffer:
+        # Transform the buffer for output
+        data_array = numpy.atleast_1d(numpy.array(data_buffer).squeeze())
+
+        # Assert consistency of xs data (or set the number of groups for the first time)
+        try:
+          assert data_array.shape[0] == G
+        except NameError:
+          G = data_array.shape[0]
+
+        if xs == 'Ss':
+          data_array = numpy.atleast_3d(data_array.reshape((-1,G,G)))
+          K = data_array.shape[0]
+        elif xs == 'Q':
+          data_array = numpy.atleast_2d(data_array.reshape((-1,G)))
+
+        # Save the transformed buffer to the output dictionary
+        xs_data[xs] = data_array
+
+        # Reset the data buffer
+        data_buffer = []
+
+      xs = new_xs
 
   St = xs_data['St']
   xs_data['D'] = 1/St
@@ -100,6 +84,8 @@ def parse_material(data_file_name):
     for k in range(K):
       Ssk = numpy.diag(xs_data['Ss'][k])
       xs_data['C'][k,:,:] = numpy.diag( (2 * k + 1) * Ssk / (4 * numpy.pi * St * (St - Ssk)) )
+
+  xs_data['dimensions'] = (G, K)
 
   # Save the dictionary of xs data
   numpy.savez(os.path.splitext(data_file_name)[0] + '.npz', **xs_data)

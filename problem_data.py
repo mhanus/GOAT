@@ -13,7 +13,7 @@ class MeshFiles:
     self.mesh = os.path.join(folder, mesh_base_name + ".xml")
     self.physical_regions = os.path.join(folder, mesh_base_name + "_physical_region.xml")
     self.facet_regions = os.path.join(folder, mesh_base_name + "_facet_region.xml")
-    
+
     assert os.path.isfile(self.mesh) and \
            os.path.isfile(self.physical_regions) and \
            os.path.isfile(self.facet_regions)
@@ -22,30 +22,29 @@ class MeshFiles:
     self.mat_names = os.path.join(folder, "mat_names.txt")
     self.bnd_names = os.path.join(folder, "bnd_names.txt")
 
-
 # noinspection PyAttributeOutsideInit,PyUnboundLocalVariable
 class ProblemData(object):
-  def __init__(self, problem_name, mesh_base_name="", verbosity=0):
+  def __init__(self, problem_name, core_spec_file="", mesh_base_name="", verbosity=0):
     super(ProblemData, self).__init__()
 
-    self.core = CoreData()
+    self.folder = os.path.abspath(os.path.join('PROBLEMS', problem_name))
 
     if MPI.rank(comm) == 0:
       self.parse_material_data()
 
-    comm.Barrier()
+    MPI.barrier(comm)
 
     self.verb = verbosity
     self.name = problem_name
+    self.core_spec_file = core_spec_file
 
     self.xsd = dict()
 
     self.mesh_base_name = mesh_base_name
-    if not self.mesh_base_name:
+    if self.mesh_base_name == "":
       self.mesh_base_name = self.name
 
-    self.folder = os.path.abspath(os.path.join('PROBLEMS', problem_name))
-    self.out_folder = os.path.join(self.folder, "OUT", mesh_base_name)
+    self.out_folder = os.path.join(self.folder, "OUT", self.mesh_base_name)
     self.xs_vis_folder = os.path.join(self.out_folder, "XS")
 
     mkdir_p(self.xs_vis_folder)
@@ -69,7 +68,7 @@ class ProblemData(object):
     except (ImportError, IOError):
       # If failed, Dolfin mesh file structure is expected
       
-      self.mesh_files = MeshFiles(self.folder, mesh_base_name)
+      self.mesh_files = MeshFiles(self.folder, self.mesh_base_name)
       
       self.region_physical_names_from_file(self.mesh_files.reg_names)
       self.reg_names_to_material_names_from_file(self.mesh_files.mat_names)
@@ -86,6 +85,8 @@ class ProblemData(object):
       # try to get bc data from boundary_id-to-boundary_name map and a file with boundary_name-to-bc correspondences
       try:
         boundary_physical_name_map = self.mesh_module.boundary_map
+      except AttributeError:
+        pass
       finally:
         # use either the boundary_physical_name_map, or - if not set - assume all-vacuum bc
         self.bc = BoundaryData.from_boundary_names_map(boundary_physical_name_map)
@@ -95,10 +96,10 @@ class ProblemData(object):
       except AttributeError:
         pass
 
-
+    self.core = CoreData()
     self.load_core_and_bc_data()
 
-    # Check if bcs have been loaded from 'core.dat'; if not, try loading them directly from the mesh module
+    # Check if bcs have been loaded from core_spec_file; if not, try loading them directly from the mesh module
     if self.mesh_module is not None:
       if len(self.bc.vacuum_boundaries) == 0:
         try:
@@ -124,13 +125,8 @@ class ProblemData(object):
     except KeyError:
       pass
 
-    fp, pathname, description = imp.find_module(name, self.folder)
+    return imp.load_source(name, os.path.join(self.folder, name + ".py"))
 
-    try:
-      return imp.load_module(name, fp, pathname, description)
-    finally:
-      if fp:
-        fp.close()
 
   def region_physical_names_from_file(self, filename):
     try:
@@ -139,7 +135,7 @@ class ProblemData(object):
           data = line.strip().split()
           assert (len(data) >= 2)
 
-          reg = int(data[0]) - 1
+          reg = int(data[0])
           self.region_physical_name_map[reg] = data[1]
     except IOError:
       warning("File with region names not found - default names corresponding to subdomain indices will be used.")
@@ -155,18 +151,22 @@ class ProblemData(object):
           assert (len(data) == 2)
           self.reg_name_mat_name_map[data[0]] = data[1]
     except IOError:
-      warning("File with material names not found - default names equal to region names will be used.")
+      pass
     except AssertionError:
       warning("File with material names has incorrect format - default names equal to region names will be used.")
 
   def load_core_and_bc_data(self):
-    data_file_name = os.path.join(self.folder, "core.dat")
+    data_file_name = os.path.join(self.folder, self.core_spec_file)
 
     try:
       with open(data_file_name) as f:
         lines = f.readlines()
     except IOError:
-      warning("No file with core geometry data and b.c. specification has been found - default settings will be used.")
+      if self.mesh_module is not None:
+        warning("No file with core data and b.c. specification has been found - b.c. must be specified in the mesh "
+                "module file or otherwise all-vacuum boundaries will be assumed.")
+      else:
+        warning("No file with core data and b.c. specification has been found - default settings will be used.")
       return
 
     l = -1
@@ -192,21 +192,32 @@ class ProblemData(object):
     return os.path.join(self.folder, "MATERIALS", mat_name + ".npz")
 
   def parse_material_data(self):
-    dir_contents = os.listdir(os.path.join(self.folder, "MATERIALS"))
-    get_name = lambda path: os.path.splitext(os.path.basename(path))[0]
-    mat_names = set(map(get_name, dir_contents))
+    mat_dir = os.path.join(self.folder, "MATERIALS")
+    mat_dir_unprocessed = [os.path.join(mat_dir, f) for f in os.listdir(mat_dir) if not f.endswith('.npz')]
 
-    for mat_name, source_data_file in zip(mat_names, dir_contents):
+    get_name = lambda path: os.path.splitext(os.path.basename(path))[0]
+    mat_names = set(map(get_name, mat_dir_unprocessed))
+
+    for mat_name, source_data_file in zip(mat_names, mat_dir_unprocessed):
       data_file_name = self.data_file_name(mat_name)
 
-      if os.path.isfile(data_file_name) and os.path.getmtime(data_file_name) >= os.path.getmtime(source_data_file):
-        continue
-
-      G, K = parse_material(source_data_file)
-
-      # Assert consistency of xs data among different materials
       try:
-        assert G == self.G and K == self.scattering_order
+        xs_data = numpy.load(data_file_name)
+        if os.path.getmtime(data_file_name) >= os.path.getmtime(source_data_file):
+          G, K = xs_data["dimensions"]
+        else:
+          xs_data.close()
+          raise ProblemData.OldData()
+      except (IOError, OSError, KeyError, ProblemData.OldData):
+        G, K = parse_material(source_data_file)
+      else:
+        xs_data.close()
+
+      try:
+        # Set maximal scattering order
+        self.scattering_order = max(self.scattering_order, K)
+        # Assert consistency of xs data among different materials
+        assert G == self.G
       except AttributeError:
         self.G = G
         self.scattering_order = K
@@ -217,6 +228,10 @@ class ProblemData(object):
                             current rank's mesh partition.
     :param int M: Number of discrete directions (to be matched by the source term).
     """
+
+    self.M = M
+
+    self.set_region_data(regions)
 
     self.regions_materials = self.reg_mat_map[regions]
 
@@ -229,7 +244,7 @@ class ProblemData(object):
                              "Data file " + self.data_file_name(mat_name) + " could not be loaded.\n" +
                              "DETAILS:  " + str(e))
 
-      for xs, xsd in xs_data.iterkeys():
+      for xs, xsd in xs_data.iteritems():
         if xs == 'Q':
           if xsd.shape[0] == 1:
             # expand isotropic source to all directions
@@ -248,8 +263,10 @@ class ProblemData(object):
 
         self.xsd[xs][mat] = xsd
 
+      xs_data.close()
+
   # noinspection PyTypeChecker
-  def get(self, xs, xs_fun, gto=0, gfrom=0, k=0, vis=False):
+  def get_xs(self, xs, xs_fun, gto=0, gfrom=0, k=0, vis=False):
     assert (0 <= gto < self.G)
     assert (0 <= gfrom < self.G)
     assert (0 <= k < self.scattering_order)
@@ -278,7 +295,7 @@ class ProblemData(object):
       if self.G > 0:
         xs_label += "_{}".format(gto)
 
-        if xsd.ndim == 3:
+        if xsd.ndim == 4:
           xs_label += "_{}".format(gfrom)
 
       if self.scattering_order > 1 and xsd.ndim == 4:
@@ -286,6 +303,40 @@ class ProblemData(object):
 
       xs_fun.rename(xs_label, xs_label)
       File(os.path.join(self.xs_vis_folder, xs_label + ".pvd"), "compressed") << xs_fun
+
+    return True
+
+
+  def get_Q(self, Q_fun, m=0, gto=0, vis=False):
+    assert (0 <= gto < self.G)
+    assert (0 <= m < self.M)
+
+    timer = Timer("Fetching XS")
+
+    try:
+      xsd = self.xsd["Q"]
+    except KeyError:
+      return False
+
+    Q_values = xsd[:, m, gto]
+
+    # Assign xs data from materials to physical regions; skip if xs values for all materials are manually set to 0
+    if numpy.any(Q_values > 0):
+      Q_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values)
+    else:
+      return False
+
+    if vis:
+      label = "Q"
+
+      if self.G > 0:
+        label += "_{}".format(gto)
+
+      if self.M > 1 and xsd.ndim == 3:
+        label += "_{}".format(m)
+
+      Q_fun.rename(label, label)
+      File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << Q_fun
 
     return True
 
@@ -340,6 +391,9 @@ class ProblemData(object):
 
       regs_array = self.matname_reg_map[mat_name]
       self.reg_mat_map[regs_array] = mat
+
+  class OldData(Exception):
+    pass
 
 class CoreData(object):
 
@@ -486,7 +540,7 @@ class BoundaryData(object):
     :return: index of the last processed line
     """
     l = -1
-    while l < len(lines):
+    while l < len(lines)-1:
       l += 1
 
       if lines[l].startswith('*'):

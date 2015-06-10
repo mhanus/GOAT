@@ -31,7 +31,7 @@ class SNDiscretization(Discretization):
     super(SNDiscretization, self).__init__(problem, verbosity)
 
     if self.verb > 1: print0("Obtaining angular discretization data")
-    t_ordinates = Timer("! Angular discretization data")
+    t_ordinates = Timer("Angular discretization data")
 
     from transport_data import ordinates_ext_module, quadrature_file
     from common import check_sn_order
@@ -39,6 +39,8 @@ class SNDiscretization(Discretization):
     self.angular_quad = ordinates_ext_module.OrdinatesData(SN_order, self.mesh.topology().dim(), quadrature_file)
     self.M = self.angular_quad.get_M()
     self.N = check_sn_order(SN_order)
+
+    t_ordinates.stop()
 
     if self.verb > 2:
       self.angular_quad.print_info()

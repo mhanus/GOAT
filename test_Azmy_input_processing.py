@@ -12,6 +12,10 @@ parser = ArgumentParser(description='Description.')
 parser.add_argument('problem_name',
                     help="Problem name. Defines the subfolder in the 'problems' folder serving as the parent folder "
                          "for all problem data and results.")
+parser.add_argument('-c', '--core', type=str, default="",
+                    help='Optional core specification file. Specifies boundary condition types, power normalization '
+                         'for keff eigenvalue calcs. and axial layering for some axial output quantities. Not all '
+                         'parts are needed - e.g. only boundary conditions may be specified in the file.')
 parser.add_argument('-m', '--mesh', type=str, default="",
                     help='Mesh base filename. If not specified, mesh_base_filename = problem_name. If Python module '
                          '<mesh_base_filename>.py is found in the problem folder, mesh data is imported from it. '
@@ -68,10 +72,14 @@ from problem_data import ProblemData
 #=======================================================================================================================
 # TEST 0 - basic test with GMSH mesh files (specified on command line)
 #
+print "======================"
+print "=       TEST 0       ="
+print "======================"
 t_init = dolfin_common.Timer("Init 0 ")
 
-PRD = ProblemData(args.problem_name, args.mesh, args.verbosity)
+PRD = ProblemData(args.problem_name, args.core, args.mesh, args.verbosity)
 DD = Discretization(PRD, args.SN_order, args.verbosity)
+PRD.distribute_material_data(DD.cell_regions, DD.M)
 
 t_init.stop()
 
@@ -94,54 +102,58 @@ Ss_fun = Function(DD.V0)
 C_fun = Function(DD.V0)
 Q_fun = Function(DD.V0)
 
-PRD.get('St', D_fun, vis=True)
-PRD.get('D', St_fun, vis=True)
-PRD.get('Ss', Ss_fun, vis=True)
-PRD.get('C', C_fun, vis=True)
-PRD.get('Q', Q_fun, vis=True)
+PRD.get_xs('St', St_fun, vis=True)
+PRD.get_xs('D', D_fun, vis=True)
+PRD.get_xs('Ss', Ss_fun, vis=True)
+PRD.get_xs('C', C_fun, vis=True)
+PRD.get_Q(Q_fun, numpy.random.randint(0,DD.M), vis=True)
 
 # Assert D is computed correctly
 
 # Local
-assert D_fun.vector().array() == 1/St_fun.vector().array()
+assert numpy.allclose(D_fun.vector().array(), 1/St_fun.vector().array())
 
 # Global
 D0 = D_fun.vector().gather_on_zero()
 St0 = St_fun.vector().gather_on_zero()
-assert D0 == 1/St0
+assert numpy.allclose(D0,1/St0)
 
-# Assert C is computed correctly
+# Assert C is computed correctly (no scattering in the material data => Ss_array = [0,...,0], C_array = [0,...,0])
 
 # Local
 Ss_array = Ss_fun.vector().array()
 St_array = St_fun.vector().array()
-assert C_fun.vector().array() == Ss_array/(4*numpy.pi * St_array(St_array - Ss_array))
+assert numpy.allclose(C_fun.vector().array(), Ss_array / (4*numpy.pi * St_array * (St_array - Ss_array)))
 
 # Assert that no fission is present
 
-assert PRD.get('nSf', None, vis=True) == False
+assert PRD.get_xs('nSf', None, vis=True) == False
 
 # Assert correct source distribution
 
 Q_array = Q_fun.vector().array()
-M2_dofs = DD.local_cell_dof_map(numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M2']))
+M2_dofs = DD.local_cell_dof_map[numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M2'])]
 # noinspection PyTypeChecker
 assert M2_dofs.size == 0 or numpy.all(Q_array[M2_dofs] == 0)
 
-M1_dofs = DD.local_cell_dof_map(numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M1']))
+M1_dofs = DD.local_cell_dof_map[numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M1'])]
 # noinspection PyTypeChecker
-assert M2_dofs.size == 0 or numpy.all(Q_array[M1_dofs] == 1/(4*numpy.pi))
+assert M2_dofs.size == 0 or numpy.allclose(Q_array[M1_dofs], 1/(4*numpy.pi))
 
 #=======================================================================================================================
 # TEST 1-3 - test mesh data imported from mesh modules
 #
 
 # noinspection PyTypeChecker
-def test_mesh_module(idx):
+def test_mesh_module(idx, core_spec=""):
+  print "======================"
+  print "=       TEST {}      =".format(idx)
+  print "======================"
   t_init = dolfin_common.Timer("Init {}".format(idx))
 
-  prd = ProblemData(args.problem_name, "mesh{}".format(idx), args.verbosity)
+  prd = ProblemData(args.problem_name, core_spec, "mesh{}".format(idx), args.verbosity)
   dd = Discretization(prd, args.SN_order, args.verbosity)
+  prd.distribute_material_data(dd.cell_regions, dd.M)
 
   t_init.stop()
 
@@ -164,27 +176,32 @@ def test_mesh_module(idx):
   C = Function(dd.V0)
   Q = Function(dd.V0)
 
-  prd.get('St', D, vis=True)
-  prd.get('D', St, vis=True)
-  prd.get('Ss', Ss, vis=True)
-  prd.get('C', C, vis=True)
-  prd.get('Q', Q, vis=True)
+  prd.get_xs('St', St, vis=True)
+  prd.get_xs('D', D, vis=True)
+  prd.get_xs('Ss', Ss, vis=True)
+  prd.get_xs('C', C, vis=True)
+  prd.get_Q(Q, numpy.random.randint(0,dd.M), vis=True)
 
-  assert prd.get('nSf', None, vis=True) == False
+  assert prd.get_xs('nSf', None, vis=True) == False
 
   # Assert correct source distribution
 
   Q_array = Q.vector().array()
-  M2_dofs = dd.local_cell_dof_map(numpy.in1d(dd.cell_regions, prd.matname_reg_map['M2']))
+  M2_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, prd.matname_reg_map['M2'])]
   assert M2_dofs.size == 0 or numpy.all(Q_array[M2_dofs] == 0)
 
-  M1_dofs = dd.local_cell_dof_map(numpy.in1d(dd.cell_regions, prd.matname_reg_map['M1']))
-  assert M2_dofs.size == 0 or numpy.all(Q_array[M1_dofs] == 1/(4*numpy.pi))
+  M1_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, prd.matname_reg_map['M1'])]
+  assert M2_dofs.size == 0 or numpy.allclose(Q_array[M1_dofs], 1/(4*numpy.pi))
 
-  return prd.bc.vacuum_boundaries, prd.bc.reflective_boundaries, prd.bc.incoming_fluxes
+  return prd.bc
 
 #-----------------------------------------------------------------------------------------------------------------------
 
-vac, ref, inc = test_mesh_module(1)
-assert (vac, ref, inc) == test_mesh_module(2)
-assert (vac, ref, inc) == test_mesh_module(3)
+bc1 = test_mesh_module(1)
+bc2 = test_mesh_module(2)
+bc3 = test_mesh_module(3, "core.dat")
+
+assert bc2.all_vacuum()
+assert bc3.vacuum_boundaries == bc1.vacuum_boundaries and \
+       bc3.reflective_boundaries == bc1.reflective_boundaries and \
+       bc3.incoming_fluxes == bc1.incoming_fluxes

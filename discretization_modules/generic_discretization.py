@@ -35,23 +35,26 @@ class Discretization(object):
         
     t_load = Timer("DD: Data loading")
 
-    try:
-      self.mesh = problem.mesh_module.mesh
-      self.boundaries = problem.mesh_module.boundaries
-      self.cell_regions = problem.mesh_module.regions
-
-    except AttributeError:
+    if not problem.mesh_module:
       if self.verb > 1: print pid + "  mesh data"
       self.mesh = Mesh(problem.mesh_files.mesh)
 
       if self.verb > 1: print pid + "  physical data"
-      self.cell_regions = MeshFunction("size_t", self.mesh, problem.mesh_files.physical_regions)
+      self.cell_regions_fun = MeshFunction("size_t", self.mesh, problem.mesh_files.physical_regions)
 
       if self.verb > 1: print pid + "  boundary data"
       self.boundaries = MeshFunction("size_t", self.mesh, problem.mesh_files.facet_regions)
+    else:
+      self.mesh = problem.mesh_module.mesh
+      self.cell_regions_fun = problem.mesh_module.regions
+
+      try:
+        self.boundaries = problem.mesh_module.boundaries
+      except AttributeError:
+        self.boundaries = None
 
     assert self.mesh
-    assert self.boundaries.array().size > 0
+    assert self.boundaries is None or self.boundaries.array().size > 0
 
     if self.verb > 2:
       print pid+"  mesh info: " + str(self.mesh)
@@ -72,6 +75,7 @@ class Discretization(object):
     dofmap = self.V0.dofmap()
     self.local_ndof0 = dofmap.local_dimension("owned")
 
+    self.cell_regions = self.cell_regions_fun.array()
     assert self.cell_regions.size == self.local_ndof0
 
   def __create_cell_dof_mapping(self, dofmap):
@@ -214,14 +218,17 @@ class Discretization(object):
     if self.verb > 2: print0("Visualizing mesh data")
 
     File(os.path.join(self.vis_folder, "mesh.pvd"), "compressed") << self.mesh
-    File(os.path.join(self.vis_folder, "boundaries.pvd"), "compressed") << self.boundaries
-    File(os.path.join(self.vis_folder, "mesh_regions.pvd"), "compressed") << self.cell_regions
+    if self.boundaries:
+      File(os.path.join(self.vis_folder, "boundaries.pvd"), "compressed") << self.boundaries
+    File(os.path.join(self.vis_folder, "mesh_regions.pvd"), "compressed") << self.cell_regions_fun
 
     # Create MeshFunction to hold cell process rank
     processes = CellFunction('size_t', self.mesh, MPI.rank(comm))
     File(os.path.join(self.vis_folder, "mesh_partitioning.pvd"), "compressed") << processes
 
   def print_diagnostics(self):
+    print "\nDiscretization diagnostics"
+
     print MPI.rank(comm), self.mesh.num_entities(self.mesh.topology().dim())
 
     dofmap = self.V0.dofmap()
@@ -232,6 +239,3 @@ class Discretization(object):
 
     print "#Owned by {}: {}".format(MPI.rank(comm), dofmap.local_dimension("owned"))
     print "#Unowned by {}: {}".format(MPI.rank(comm), dofmap.local_dimension("unowned"))
-
-    for cell in entities(self.mesh, self.mesh.topology().dim()):
-      print MPI.rank(comm), cell.index(), dofmap.tabulate_entity_dofs(self.mesh.topology().dim(), cell.index())
