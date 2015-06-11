@@ -49,9 +49,7 @@ class ProblemData(object):
 
     mkdir_p(self.xs_vis_folder)
 
-    self.region_physical_name_map = dict()
-    self.reg_name_mat_name_map = dict()
-    boundary_physical_name_map = dict()
+    self.used_xs = set()
 
     # Two alternative ways of specifying a mesh:
     #   1:  Python module
@@ -59,6 +57,10 @@ class ProblemData(object):
     #
     self.mesh_module = None
     self.mesh_files = None
+
+    self.region_physical_name_map = dict()
+    self.reg_name_mat_name_map = dict()
+    boundary_physical_name_map = dict()
     
     try:
       # Try to import a mesh module
@@ -254,7 +256,6 @@ class ProblemData(object):
             coupled_solver_error(__file__,
                                  "initialize XS data for material {}".format(mat_name),
                                  "Invalid number of source directions ({}, expected {})".format(xsd.shape[0], M))
-
         try:
           self.xsd[xs]
         except KeyError:
@@ -262,6 +263,7 @@ class ProblemData(object):
           self.xsd[xs] = numpy.zeros(shape)
 
         self.xsd[xs][mat] = xsd
+        self.used_xs.add(xs)
 
       xs_data.close()
 

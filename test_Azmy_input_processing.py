@@ -77,21 +77,21 @@ print "=       TEST 0       ="
 print "======================"
 t_init = dolfin_common.Timer("Init 0 ")
 
-PRD = ProblemData(args.problem_name, args.core, args.mesh, args.verbosity)
-DD = Discretization(PRD, args.SN_order, args.verbosity)
-PRD.distribute_material_data(DD.cell_regions, DD.M)
+PD = ProblemData(args.problem_name, args.core, args.mesh, args.verbosity)
+DD = Discretization(PD, args.SN_order, args.verbosity)
+PD.distribute_material_data(DD.cell_regions, DD.M)
 
 t_init.stop()
 
 init_timings_table = dolfin_common.timings(True)
 print_timings( init_timings_table, args.verbosity > 0,
-               os.path.join(PRD.out_folder, "timings0.txt"), os.path.join(PRD.out_folder, "timings0.tex") )
+               os.path.join(PD.out_folder, "timings0.txt"), os.path.join(PD.out_folder, "timings0.tex") )
 
-PRD.core.info()
-PRD.bc.info()
+PD.core.info()
+PD.bc.info()
 
-assert PRD.G == 1
-assert PRD.scattering_order == 1
+assert PD.G == 1
+assert PD.scattering_order == 1
 
 DD.print_diagnostics()
 DD.visualize_mesh_data()
@@ -102,11 +102,11 @@ Ss_fun = Function(DD.V0)
 C_fun = Function(DD.V0)
 Q_fun = Function(DD.V0)
 
-PRD.get_xs('St', St_fun, vis=True)
-PRD.get_xs('D', D_fun, vis=True)
-PRD.get_xs('Ss', Ss_fun, vis=True)
-PRD.get_xs('C', C_fun, vis=True)
-PRD.get_Q(Q_fun, numpy.random.randint(0,DD.M), vis=True)
+PD.get_xs('St', St_fun, vis=True)
+PD.get_xs('D', D_fun, vis=True)
+PD.get_xs('Ss', Ss_fun, vis=True)
+PD.get_xs('C', C_fun, vis=True)
+PD.get_Q(Q_fun, numpy.random.randint(0,DD.M), vis=True)
 
 # Assert D is computed correctly
 
@@ -127,16 +127,16 @@ assert numpy.allclose(C_fun.vector().array(), Ss_array / (4*numpy.pi * St_array 
 
 # Assert that no fission is present
 
-assert PRD.get_xs('nSf', None, vis=True) == False
+assert PD.get_xs('nSf', None, vis=True) == False
 
 # Assert correct source distribution
 
 Q_array = Q_fun.vector().array()
-M2_dofs = DD.local_cell_dof_map[numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M2'])]
+M2_dofs = DD.local_cell_dof_map[numpy.in1d(DD.cell_regions, PD.matname_reg_map['M2'])]
 # noinspection PyTypeChecker
 assert M2_dofs.size == 0 or numpy.all(Q_array[M2_dofs] == 0)
 
-M1_dofs = DD.local_cell_dof_map[numpy.in1d(DD.cell_regions, PRD.matname_reg_map['M1'])]
+M1_dofs = DD.local_cell_dof_map[numpy.in1d(DD.cell_regions, PD.matname_reg_map['M1'])]
 # noinspection PyTypeChecker
 assert M2_dofs.size == 0 or numpy.allclose(Q_array[M1_dofs], 1/(4*numpy.pi))
 
@@ -151,21 +151,21 @@ def test_mesh_module(idx, core_spec=""):
   print "======================"
   t_init = dolfin_common.Timer("Init {}".format(idx))
 
-  prd = ProblemData(args.problem_name, core_spec, "mesh{}".format(idx), args.verbosity)
-  dd = Discretization(prd, args.SN_order, args.verbosity)
-  prd.distribute_material_data(dd.cell_regions, dd.M)
+  pd = ProblemData(args.problem_name, core_spec, "mesh{}".format(idx), args.verbosity)
+  dd = Discretization(pd, args.SN_order, args.verbosity)
+  pd.distribute_material_data(dd.cell_regions, dd.M)
 
   t_init.stop()
 
   init_timings_table = dolfin_common.timings(True)
   print_timings( init_timings_table, args.verbosity > 0,
-                 os.path.join(prd.out_folder, "timings{}.txt".format(idx)))
+                 os.path.join(pd.out_folder, "timings{}.txt".format(idx)))
 
-  prd.core.info()
-  prd.bc.info()
+  pd.core.info()
+  pd.bc.info()
 
-  assert prd.G == 1
-  assert prd.scattering_order == 1
+  assert pd.G == 1
+  assert pd.scattering_order == 1
 
   dd.print_diagnostics()
   dd.visualize_mesh_data()
@@ -176,24 +176,24 @@ def test_mesh_module(idx, core_spec=""):
   C = Function(dd.V0)
   Q = Function(dd.V0)
 
-  prd.get_xs('St', St, vis=True)
-  prd.get_xs('D', D, vis=True)
-  prd.get_xs('Ss', Ss, vis=True)
-  prd.get_xs('C', C, vis=True)
-  prd.get_Q(Q, numpy.random.randint(0,dd.M), vis=True)
+  pd.get_xs('St', St, vis=True)
+  pd.get_xs('D', D, vis=True)
+  pd.get_xs('Ss', Ss, vis=True)
+  pd.get_xs('C', C, vis=True)
+  pd.get_Q(Q, numpy.random.randint(0,dd.M), vis=True)
 
-  assert prd.get_xs('nSf', None, vis=True) == False
+  assert pd.get_xs('nSf', None, vis=True) == False
 
   # Assert correct source distribution
 
   Q_array = Q.vector().array()
-  M2_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, prd.matname_reg_map['M2'])]
+  M2_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, pd.matname_reg_map['M2'])]
   assert M2_dofs.size == 0 or numpy.all(Q_array[M2_dofs] == 0)
 
-  M1_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, prd.matname_reg_map['M1'])]
+  M1_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, pd.matname_reg_map['M1'])]
   assert M2_dofs.size == 0 or numpy.allclose(Q_array[M1_dofs], 1/(4*numpy.pi))
 
-  return prd.bc
+  return pd.bc
 
 #-----------------------------------------------------------------------------------------------------------------------
 

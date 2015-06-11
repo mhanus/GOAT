@@ -6,7 +6,8 @@ from dolfin.cpp.mesh import Mesh, CellFunction, MeshFunction, entities
 
 from common import pid, comm, print0
 
-# TODO: Split discretization and channel data
+# TODO: Add capability of visualizing mesh data every n-th iteration of an outer (adaptivity) loop, appending the
+#       visualizations to the output file, so that they can be animated afterwards.
 
 # noinspection PyArgumentList
 def get_parameters():
