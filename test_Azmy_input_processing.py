@@ -21,13 +21,13 @@ parser.add_argument('-m', '--mesh', type=str, default="",
                          '<mesh_base_filename>.py is found in the problem folder, mesh data is imported from it. '
                          'Otherwise, mesh data is read from <mesh_base_filename>.xml, '
                          '<mesh_base_filename>_physical_region.xml, <mesh_base_filename>_facet_region.xml and optional '
-                         'reg/mat/bnd_names.txt.')
+                         '{reg,mat,bnd}_names.txt.')
 parser.add_argument('-pap', '--print_actual_parameters', action="store_true",
                     help='Print actually set control parameters.')
 parser.add_argument('-v', '--verbosity', type=int, choices=range(6), default=0,
                     help='Output verbosity.')
 parser.add_argument('-N', '--SN_order', type=check_sn_order, default=0,
-                    help='SN order (positive even number <= 32; if 0, diffusion will be used).')
+                    help='SN order (positive even number <= 32.')
 
 args, additional_args = parser.parse_known_args()
 
@@ -200,8 +200,12 @@ def test_mesh_module(idx, core_spec=""):
 bc1 = test_mesh_module(1)
 bc2 = test_mesh_module(2)
 bc3 = test_mesh_module(3, "core.dat")
+bc4 = test_mesh_module(4)
 
-assert bc2.all_vacuum()
+assert bc2.vacuum_boundaries == bc1.vacuum_boundaries and \
+       bc2.reflective_boundaries == bc1.reflective_boundaries and \
+       bc2.incoming_fluxes == bc1.incoming_fluxes
 assert bc3.vacuum_boundaries == bc1.vacuum_boundaries and \
        bc3.reflective_boundaries == bc1.reflective_boundaries and \
        bc3.incoming_fluxes == bc1.incoming_fluxes
+assert bc4.all_vacuum()

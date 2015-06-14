@@ -1,0 +1,24 @@
+// Gmsh project created on Thu Jun 11 16:12:31 2015
+Point(1) = {-10, -10, 0, 1.0};
+Point(2) = {10, -10, 0, 1.0};
+Point(3) = {-5, -5, 0, 0.5};
+Point(4) = {5, -5, 0, 0.5};
+Point(5) = {-5, 5, 0, 0.5};
+Point(6) = {5, 5, 0, 0.5};
+Point(7) = {-10, 10, 0, 1.0};
+Point(8) = {10, 10, 0, 1.0};
+Line(1) = {1, 2};
+Line(2) = {2, 8};
+Line(3) = {8, 7};
+Line(4) = {7, 1};
+Line(5) = {3, 4};
+Line(6) = {4, 6};
+Line(7) = {6, 5};
+Line(8) = {5, 3};
+Line Loop(9) = {1, 2, 3, 4};
+Line Loop(10) = {7, 8, 5, 6};
+Plane Surface(11) = {9, 10};
+Plane Surface(12) = {10};
+Physical Surface("M1") = {12};
+Physical Surface("M2") = {11};
+Physical Line("vacuum") = {1, 2, 3, 4};
