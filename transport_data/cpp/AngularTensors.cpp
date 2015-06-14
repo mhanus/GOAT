@@ -20,10 +20,14 @@ AngularTensors::AngularTensors(const OrdinatesData& odata, int L)
 	else if (D == 2)
 		K = 1./2.*(L+1)*(L+2);
 
+	_Y.reserve(K*M);
 	_Q.reserve(K*M);
 	_Qt.reserve(K*M*D);
 	_G.resize(M*M*D, 0.0);
 	_T.resize(M*M*D*D, 0.0);
+
+	_shape_Y.push_back(K);
+	_shape_Y.push_back(M);
 
 	_shape_Q.push_back(K);
 	_shape_Q.push_back(M);
@@ -42,6 +46,7 @@ AngularTensors::AngularTensors(const OrdinatesData& odata, int L)
 	std::vector<double>::iterator Tit = _T.begin();
 
 	for (int l = 0; l <= L; l++)
+	{
 		for (int m = -l; m <= l; m++)
 		{
 			if (D == 2 && (l+m)%2 != 0)
@@ -50,14 +55,17 @@ AngularTensors::AngularTensors(const OrdinatesData& odata, int L)
 			SphericalHarmonic Ylm(l, m);
 			for (int p = 0; p < M; p++)
 			{
-				_Q.push_back(Ylm(odata.xi[p], odata.eta[p], odata.mu[p]) * odata.pw[p]);
+        double Ylmp = Ylm(odata.xi[p], odata.eta[p], odata.mu[p]);
+				_Y.push_back(Ylmp);
+				_Q.push_back(Ylmp * odata.pw[p]);
 
 				double omega_p[3] = { odata.xi[p], odata.eta[p], odata.mu[p] };
 
 				for (int i = 0; i < D; i++)
-					_Qt.push_back(Ylm(odata.xi[p], odata.eta[p], odata.mu[p]) * odata.pw[p] * omega_p[i] );
+					_Qt.push_back(Ylmp * odata.pw[p] * omega_p[i] );
 			}
 		}
+  }
 
 	for (int p = 0; p < M; p++)
 	{

@@ -2,7 +2,7 @@ import os, numpy
 from dolfin import FunctionSpace, parameters, compile_extension_module
 from dolfin.cpp.io import File
 from dolfin.cpp.common import Timer, Parameters, IntArray, DoubleArray, MPI
-from dolfin.cpp.mesh import Mesh, CellFunction, MeshFunction, entities
+from dolfin.cpp.mesh import Mesh, CellFunction, MeshFunction
 
 from common import pid, comm, print0
 
@@ -66,7 +66,6 @@ class Discretization(object):
 
     # Spaces that must be specified by the respective subclasses
     self.V = None     # solution space
-    self.Vphi = None  # scalar flux space
     self.Vphi1 = None # 1-g scalar flux space
     
     # XS / TH space

@@ -11,19 +11,21 @@ using namespace dolfin;
 inline double sqr(double x) { return x*x; }
 
 /* Ordinates in the four octants of the upper hemisphere are ordered as
-*
-*      13         12
-*     17  5     4  16
-*    21  9 1   0 8  20
-*            o
-*    22 10 2   3 11 23
-*     18  6     7  19
-*       14        15
+ *
+ *      13         12
+ *     17  5     4  16
+ *    21  9 1   0 8  20
+ *            o
+ *    22 10 2   3 11 23
+ *     18  6     7  19
+ *       14        15
 **/
 OrdinatesData::OrdinatesData(unsigned int N, unsigned int D, const string& filename) : N(N), M(N*(N+2)), D(D)
 {
 	if (D < 2 || D > 3)
-		dolfin_error("OrdinatesData.cpp", "construct the OrdinatesData object", "Only 2D or 3D ordinates currently supported", filename.c_str());
+		dolfin_error("OrdinatesData.cpp",
+		             "construct the OrdinatesData object",
+		             "Only 2D or 3D ordinates currently supported");
 
 	if (D == 2)
 		M /= 2;
@@ -31,7 +33,9 @@ OrdinatesData::OrdinatesData(unsigned int N, unsigned int D, const string& filen
 	ifstream ifs(filename.c_str());
 
 	if (ifs.fail())
-		dolfin_error("OrdinatesData.cpp", "construct the OrdinatesData object", "Discrete ordinates could not be loaded from %s", filename.c_str());
+		dolfin_error("OrdinatesData.cpp",
+		             "construct the OrdinatesData object",
+		             "Discrete ordinates could not be loaded from %s", filename.c_str());
 
 	string tmp;
 	getline(ifs, tmp);
@@ -52,7 +56,9 @@ OrdinatesData::OrdinatesData(unsigned int N, unsigned int D, const string& filen
 	while (!ifs.eof());
 
 	if (ifs.eof())
-		dolfin_error("OrdinatesData.cpp", "construct the OrdinatesData object", "Required set of discrete ordinates could not be found in %s", filename.c_str());
+		dolfin_error("OrdinatesData.cpp",
+		             "construct the OrdinatesData object",
+		             "Required set of discrete ordinates could not be found in %s", filename.c_str());
 
 	double *mu_base = new double [N/2];
 
@@ -78,7 +84,9 @@ OrdinatesData::OrdinatesData(unsigned int N, unsigned int D, const string& filen
 	while (!ifs.eof());
 
 	if (ifs.eof())
-		dolfin_error("OrdinatesData.cpp", "construct the OrdinatesData object", "Required set of weights could not be found in %s", filename.c_str());
+		dolfin_error("OrdinatesData.cpp",
+		             "construct the OrdinatesData object",
+		             "Required set of weights could not be found in %s", filename.c_str());
 
 	double *wt = new double [N/2];
 
@@ -188,11 +196,17 @@ namespace dolfin {
 		for ( ; xi != odata.xi.end(); ++xi, ++eta, ++mu, ++pw)
 		{
 			os << endl << *xi << ", " << *eta << ", " << *mu << ", " << *pw << endl;
-			os << " --- " << odata.xi[odata.reflections_about_x[m]] << ", " << odata.eta[odata.reflections_about_x[m]] << ", " << odata.mu[odata.reflections_about_x[m]] << endl;
-			os << "  |  " << odata.xi[odata.reflections_about_y[m]] << ", " << odata.eta[odata.reflections_about_y[m]] << ", " << odata.mu[odata.reflections_about_y[m]] << endl;
+			os << " --- " << odata.xi[odata.reflections_about_x[m]] << ", "
+                    << odata.eta[odata.reflections_about_x[m]] << ", "
+                    << odata.mu[odata.reflections_about_x[m]] << endl;
+			os << "  |  " << odata.xi[odata.reflections_about_y[m]] << ", "
+			              << odata.eta[odata.reflections_about_y[m]] << ", "
+			              << odata.mu[odata.reflections_about_y[m]] << endl;
 
 			if (odata.D == 3)
-				os << "  /  " << odata.xi[odata.reflections_about_z[m]] << ", " << odata.eta[odata.reflections_about_z[m]] << ", " << odata.mu[odata.reflections_about_z[m]] << endl;
+				os << "  /  " << odata.xi[odata.reflections_about_z[m]] << ", "
+				              << odata.eta[odata.reflections_about_z[m]] << ", "
+				              << odata.mu[odata.reflections_about_z[m]] << endl;
 
 			m++;
 		}
@@ -232,10 +246,11 @@ void OrdinatesData::write_pw(const string& filename)
 std::vector<double> OrdinatesData::get_ordinate(int n) const
 {
 	std::vector<double> ret;
-	ret.reserve(3);
+	ret.reserve(D);
 	ret.push_back(xi[n]);
 	ret.push_back(eta[n]);
-	ret.push_back(mu[n]);
+	if (D == 3)
+	  ret.push_back(mu[n]);
 
 	return ret;
 }

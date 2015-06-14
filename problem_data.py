@@ -18,9 +18,9 @@ class MeshFiles:
            os.path.isfile(self.physical_regions) and \
            os.path.isfile(self.facet_regions)
 
-    self.reg_names = os.path.join(folder, "reg_names.txt")
-    self.mat_names = os.path.join(folder, "mat_names.txt")
-    self.bnd_names = os.path.join(folder, "bnd_names.txt")
+    self.reg_names = os.path.join(folder, mesh_base_name+"_reg_names.txt")
+    self.mat_names = os.path.join(folder, mesh_base_name+"_mat_names.txt")
+    self.bnd_names = os.path.join(folder, mesh_base_name+"_bnd_names.txt")
 
 # noinspection PyAttributeOutsideInit,PyUnboundLocalVariable
 class ProblemData(object):
@@ -29,8 +29,9 @@ class ProblemData(object):
 
     self.folder = os.path.abspath(os.path.join('PROBLEMS', problem_name))
 
-    if MPI.rank(comm) == 0:
-      self.parse_material_data()
+    # FIXME:
+    #if MPI.rank(comm) == 0:
+    self.parse_material_data()
 
     MPI.barrier(comm)
 
@@ -50,6 +51,7 @@ class ProblemData(object):
     mkdir_p(self.xs_vis_folder)
 
     self.used_xs = set()
+    self.isotropic_source_everywhere = True
 
     # Two alternative ways of specifying a mesh:
     #   1:  Python module
@@ -64,7 +66,6 @@ class ProblemData(object):
     
     try:
       # Try to import a mesh module
-      
       self.mesh_module = self.mesh_data_from_module(self.mesh_base_name)
     
     except (ImportError, IOError):
@@ -105,13 +106,13 @@ class ProblemData(object):
     if self.mesh_module is not None:
       if len(self.bc.vacuum_boundaries) == 0:
         try:
-          self.bc.vacuum_boundaries = self.mesh_module.vacuum_boundaries
+          self.bc.vacuum_boundaries = set(self.mesh_module.vacuum_boundaries)
         except AttributeError:
           pass
 
       if len(self.bc.reflective_boundaries) == 0:
         try:
-          self.bc.reflective_boundaries = self.mesh_module.reflective_boundaries
+          self.bc.reflective_boundaries = set(self.mesh_module.reflective_boundaries)
         except AttributeError:
           pass
 
@@ -256,6 +257,9 @@ class ProblemData(object):
             coupled_solver_error(__file__,
                                  "initialize XS data for material {}".format(mat_name),
                                  "Invalid number of source directions ({}, expected {})".format(xsd.shape[0], M))
+          else:
+            self.isotropic_source_everywhere = False
+
         try:
           self.xsd[xs]
         except KeyError:
@@ -266,6 +270,10 @@ class ProblemData(object):
         self.used_xs.add(xs)
 
       xs_data.close()
+
+    self.fixed_source_problem = 'Q' in self.used_xs
+    self.eigenproblem = len({'nSf', 'chi'}.intersection(self.used_xs)) == 2 and not self.fixed_source_problem
+    assert self.fixed_source_problem or self.eigenproblem
 
   # noinspection PyTypeChecker
   def get_xs(self, xs, xs_fun, gto=0, gfrom=0, k=0, vis=False):
@@ -516,15 +524,15 @@ class BoundaryData(object):
     super(BoundaryData, self).__init__()
 
     self.boundary_names_idx_map = bnd_idx_map
-    self.vacuum_boundaries = []
-    self.reflective_boundaries = []
+    self.vacuum_boundaries = set()
+    self.reflective_boundaries = set()
     self.incoming_fluxes = defaultdict(list)
 
   def info(self):
     if MPI.rank(comm) != 0:
       return
 
-    print "Boundary names -> idx:"
+    print "\nBoundary names -> idx:"
     print " ", self.boundary_names_idx_map
     print "\nVacuum boundaries:", self.vacuum_boundaries
     print "\nReflective boundaries:", self.reflective_boundaries
@@ -588,14 +596,14 @@ class BoundaryData(object):
         continue
 
       if data == "v" or data == "vacuum":
-        self.vacuum_boundaries.append(idx)
+        self.vacuum_boundaries.add(idx)
         return li
       elif data == "r" or data == "reflective":
-        self.reflective_boundaries.append(idx)
+        self.reflective_boundaries.add(idx)
         return li
 
       data = data.replace(',', ' ').replace(';', ' ').split()
-
+      set().update()
       try:
         self.incoming_fluxes[idx].append(map(float, data))
       except ValueError:

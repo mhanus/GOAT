@@ -50,8 +50,8 @@ target/
 *~
 .DS_Store
 
-PROBLEMS/*/reg_names.txt
-PROBLEMS/*/bnd_names.txt
-PROBLEMS/*/mat_names.txt
+PROBLEMS/*/*_reg_names.txt
+PROBLEMS/*/*_bnd_names.txt
+PROBLEMS/*/*_mat_names.txt
 PROBLEMS/*/*.msh
 PROBLEMS/*/*.xml

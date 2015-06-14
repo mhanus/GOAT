@@ -41,7 +41,7 @@ def get_parameters():
   params.add(
     Parameters(
       "visualization",
-      flux = 0,
+      flux = 1,
       cell_powers = 0
     )
   )
@@ -107,6 +107,7 @@ def coo_rep_on_zero(A, rows_glob=None, cols_glob=None, vals_glob=None, sym=False
   
   timer = Timer("COO representation")
 
+  # noinspection PyBroadException
   try:  # DOLFIN 1.4+
     Acomp = PETScMatrix()
     A.copy().compressed(Acomp)
@@ -144,11 +145,13 @@ class FluxModule(object):
 
     self.PD = PD
     self.DD = DD
-    self.BC = PD.core.bc
+    self.BC = PD.bc
 
-    self.fixed_source_problem = 'Q' in PD.used_xs
-    self.eigenproblem = len({'nSf', 'chi'}.intersection(PD.used_xs)) == 2 and not self.fixed_source_problem
-    assert self.fixed_source_problem or self.eigenproblem
+    try:
+      self.fixed_source_problem = PD.fixed_source_problem
+      self.eigenproblem = PD.eigenproblem
+    except AttributeError:
+      PD.distribute_material_data(DD.cell_regions, DD.M)
 
     self.A = PETScMatrix()
 
@@ -167,27 +170,22 @@ class FluxModule(object):
       self.fixed_source = Function(self.DD.V0)
       self.vals_Q = None
 
-    # single group scalar flux
-    self.phig = Function(self.DD.Vphi1)
+    # multigroup scalar fluxes
+    self.phi_mg = []
+    for g in range(self.DD.G):
+      phig = Function(self.DD.Vphi1)
+      phig.rename("phi","phi_g{}".format(g))
+      self.phi_mg.append(phig)
 
-    self.sln_fun = Function(DD.V)
-    self.sln_vec = as_backend_type(self.sln_fun.vector())
-    self.prev_sln_fun = Function(DD.V)
-    self.prev_sln_vec = as_backend_type(self.prev_sln_fun.vector())
+    self.sln = Function(DD.V)
+    self.sln_vec = as_backend_type(self.sln.vector())
     self.local_sln_size = self.sln_vec.local_size()
-
-    if DD.Vphi == DD.V:
-      self.phi = self.sln_fun
-      self.prev_phi = self.prev_sln_fun
-    else:
-      self.phi = Function(DD.Vphi)
-      self.prev_phi = Function(DD.Vphi)
 
     # auxiliary function for storing various DG(0) quantities (cross sections, group-integrated reaction rates, etc.)
     self.R = Function(self.DD.V0)
 
     # fission spectrum
-    if PD.fission_source:
+    if 'chi' in self.PD.used_xs:
       self.chi = Function(self.DD.V0)
     else:
       self.chi = None
@@ -218,8 +216,7 @@ class FluxModule(object):
     self.v = TestFunction(self.DD.V)
 
     self.v0 = TestFunction(self.DD.V0)
-    # self.phi[g] cannot be used in parallel, hence self.phig must be updated for each group before assembling the
-    # following form
+    self.phig = Function(self.DD.Vphi1) # single group scalar flux
     self.cell_RR_form = self.R * self.phig * self.v0 * dx
     self._cell_RRg_vector = PETScVector()
 
@@ -233,9 +230,10 @@ class FluxModule(object):
       File(os.path.join(self.vis_folder, "{}_g{}.pvd".format(var, g)), "compressed") for g in range(self.DD.G)
     ]
 
-    vars = self.parameters["saving"].iterkeys()
-    self.save_folder = { k : os.path.join(self.PD.out_folder, k.upper()) for k in vars }
+    variables = self.parameters["saving"].iterkeys()
+    self.save_folder = { k : os.path.join(self.PD.out_folder, k.upper()) for k in variables }
 
+  # noinspection PyTypeChecker
   def save_algebraic_system(self, mat_file_name=None, it=0):
     if not mat_file_name: mat_file_name = {}
 
@@ -251,7 +249,7 @@ class FluxModule(object):
 
     timer = Timer("COO representation + matrix saving")
 
-    self.rows_A, self.cols_A, self.vals_A = coo_rep_on_zero(self.A,self.rows_A, self.cols_A, self.vals_A)
+    self.rows_A, self.cols_A, self.vals_A = coo_rep_on_zero(self.A, self.rows_A, self.cols_A, self.vals_A)
 
     if self.eigenproblem:
       self.rows_B, self.cols_B, self.vals_B = coo_rep_on_zero(self.B, self.rows_B, self.cols_B, self.vals_B)
@@ -309,12 +307,6 @@ class FluxModule(object):
   def update_phi(self):
     raise NotImplementedError("Abstract scalar flux update method -- must be overriden in specific flux modules.")
 
-  def update_phig(self, g):
-    """
-      Update :attr:`phig` by the scalar flux in group g
-      """
-    self.phig.assign(self.phi.sub(g, deepcopy=True))  # deepcopy needed in parallel
-
   def get_dg0_fluxes(self):
     """
     Get flux interpolated at DG(0) dofs.
@@ -342,7 +334,7 @@ class FluxModule(object):
         qfun = Function(self.DD.V0)
         qfun.vector()[:] = self.E
         qfun.rename("q", "Power")
-        self.vis_files["cell_powers"] << (qfun, it)
+        self.vis_files["cell_powers"] << (qfun, float(it))
 
     var = "flux"
     try:
@@ -355,9 +347,7 @@ class FluxModule(object):
         self.update_phi()
 
       for g in xrange(self.DD.G):
-        self.update_phig(g)
-        self.phig.rename("phi", "phi_g{}".format(g))
-        self.vis_files["flux"][g] << (self.phig, self.cur_vis_it(var))
+        self.vis_files["flux"][g] << (self.phi_mg[g], float(it))
 
   def print_results(self):
     if self.verb > 2:
@@ -417,7 +407,7 @@ class FluxModule(object):
     self.keff = 1. / eigensolver.get_first_eigenpair_AB(self.sln_vec)
 
     # This is needed in parallel (why not in serial?)
-    self.sln_fun.vector()[:] = self.sln_vec.array()
+    self.sln.vector()[:] = self.sln_vec.array()
 
     solution_timer.stop()
 
@@ -446,14 +436,11 @@ class FluxModule(object):
   def solve(self, it=0):
     """
     Pick the appropriate solver for current problem (eigen/fixed-source) and solve the problem (i.e., update solution
-    vector and keff).
+    vector and possibly the eigenvalue
+    ).
     """
     self.assemble_algebraic_system()
     self.save_algebraic_system(it)
-
-    # Store the scalar flux for convergence monitoring
-    self.prev_phi.vector().zero()
-    self.prev_phi.vector().axpy(1.0, self.phi.vector())
 
     if self.eigenproblem:
       self.solve_keff(it)
@@ -487,7 +474,7 @@ class FluxModule(object):
       self.PD.get_xs('eSf', self.R, g)
 
       ass_timer.start()
-      self.update_phig(g)
+      self.phig.assign(self.phi_mg[g])
       assemble(self.cell_RR_form, tensor=self._cell_RRg_vector)
       ass_timer.stop()
 
@@ -510,6 +497,7 @@ class FluxModule(object):
 
     self.E *= self.PD.core.power / P
 
+  # noinspection PyAttributeOutsideInit
   def calculate_cell_reaction_rate(self, reaction_xs, rr_vect=None, return_xs_arrays=False):
     """
     Calculates cell-integrated reaction rate and optionally returns the xs's needed for the calculation.
@@ -560,7 +548,7 @@ class FluxModule(object):
         xs_arrays[g] = self.R.vector().get_local().copy()
 
       ass_timer.start()
-      self.update_phig(g)
+      self.phig.assign(self.phi_mg[g])
       assemble(self.cell_RR_form, tensor=self._cell_RRg_vector)
       ass_timer.stop()
 

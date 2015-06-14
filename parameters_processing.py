@@ -20,10 +20,10 @@ def set_default_dolfin_parameters():
 # noinspection PyArgumentList
 def add_solver_parameters():
   import discretization_modules.generic_discretization as discretization
-  #import flux_modules.elliptic_sn_flux_module as flux_module
+  import flux_modules.elliptic_sn_flux_module as flux_module
 
   dolfin.parameters.add(discretization.get_parameters())
-  #dolfin.parameters.add(flux_module.get_parameters())
+  dolfin.parameters.add(flux_module.get_parameters())
 
 def print_info():
   if MPI.rank(comm) == 0:

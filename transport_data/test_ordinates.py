@@ -52,10 +52,13 @@ except IOError as e:
   sys.exit(-1)
   
 import numpy as np
-tensors = tensors_ext_module.AngularTensors(quadrature, 0)
+tensors = tensors_ext_module.AngularTensors(quadrature, 1)
 
 np.set_printoptions(threshold=1000, linewidth=200)
 
+Y = np.reshape(tensors.Y(), tensors.shape_Y())
+print Y
+print
 Q = np.reshape(tensors.Q(), tensors.shape_Q())
 print Q
 print

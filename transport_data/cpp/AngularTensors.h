@@ -14,19 +14,21 @@ namespace dolfin
   public:
     AngularTensors(const dolfin::OrdinatesData& odata, int L);
 
+    const std::vector<double>& Y() const { return _Y; }
     const std::vector<double>& Q() const { return _Q; }
     const std::vector<double>& Qt() const { return _Qt; }
     const std::vector<double>& G() const { return _G; }
     const std::vector<double>& T() const { return _T; }
 
+    const std::vector<int>& shape_Y() const { return _shape_Y; }
     const std::vector<int>& shape_Q() const { return _shape_Q; }
     const std::vector<int>& shape_Qt() const { return _shape_Qt; }
     const std::vector<int>& shape_G() const { return _shape_G; }
     const std::vector<int>& shape_T() const { return _shape_T; }
 
   private:
-    std::vector<double> _Q, _Qt, _G, _T;
-    std::vector<int> _shape_Q, _shape_Qt, _shape_G, _shape_T;
+    std::vector<double> _Y, _Q, _Qt, _G, _T;
+    std::vector<int> _shape_Y, _shape_Q, _shape_Qt, _shape_G, _shape_T;
   };
 
   class SphericalHarmonic

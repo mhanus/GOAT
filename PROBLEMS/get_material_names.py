@@ -39,8 +39,8 @@ lin_ids = []
 
 try:
   with open(os.path.join(problem_folder, mesh_filename), "rt") as f:
-    reg_names_file = os.path.join(problem_folder, 'reg_names.txt')
-    bnd_names_file = os.path.join(problem_folder, 'bnd_names.txt')
+    reg_names_file = os.path.join(problem_folder, mesh_base_filename+'_reg_names.txt')
+    bnd_names_file = os.path.join(problem_folder, mesh_base_filename+'_bnd_names.txt')
 
     if os.path.isfile(reg_names_file) and os.path.getmtime(reg_names_file) >= mesh_file_last_mod and \
        os.path.isfile(bnd_names_file) and os.path.getmtime(bnd_names_file) >= mesh_file_last_mod :
