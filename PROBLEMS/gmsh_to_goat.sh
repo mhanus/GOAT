@@ -27,6 +27,13 @@ if [ $? -ne 0 ]; then
     exit -1
 fi
 
+python ${mydir}/convert.py ${problem_dir}/${mesh} 2
+
+if [ $? -ne 0 ]; then
+    echo "Conversion of GOAT meshes to a parallel-friendly format unsuccessful."
+    echo "Only sequential runs will be possible."
+fi
+
 python ${mydir}/get_material_names.py ${problem} -m ${mesh}
 
 if [ $? -ne 0 ]; then
