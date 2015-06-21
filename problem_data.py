@@ -281,7 +281,7 @@ class ProblemData(object):
                                  "initialize XS data for material {}".format(mat_name),
                                  "Invalid number of source directions ({}, expected {})".format(xsd.shape[0], M))
           else:
-            self.isotropic_source_everywhere = False
+            self.isotropic_source_everywhere = False  # for assembly simplification
 
         try:
           self.xsd[xs]
@@ -370,6 +370,62 @@ class ProblemData(object):
 
       Q_fun.rename(label, label)
       File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << Q_fun
+
+    return True
+
+  def get_FG(self, F_fun, G_fun, m=0, gto=0, vis=False):
+    assert (0 <= gto < self.G)
+    assert (0 <= m < self.M)
+
+    timer = Timer("Fetching XS")
+
+    fwd = True
+    adj = True
+
+    Q_values = numpy.array([0])
+    Qa_values = numpy.array([0])
+
+    try:
+      Q = self.xsd["Q"]
+      Q_values = Q[:, m, gto]
+    except KeyError:
+      pass
+
+    try:
+      Qa = self.xsd["Qa"]
+      Qa_values = Qa[:, m, gto]
+    except KeyError:
+      pass
+
+    # Assign xs data from materials to physical regions; skip if xs values for all materials are manually set to 0
+    if numpy.all(Q_values == 0) and numpy.all(Qa_values == 0):
+      return False
+
+    F_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values + Qa_values)
+    G_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values - Qa_values)
+
+    if vis:
+      label = "F"
+
+      if self.G > 0:
+        label += "_{}".format(gto)
+
+      if self.M > 1 and Q.ndim == 3:
+        label += "_{}".format(m)
+
+      F_fun.rename(label, label)
+      File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << F_fun
+
+      label = "G"
+
+      if self.G > 0:
+        label += "_{}".format(gto)
+
+      if self.M > 1 and Qa.ndim == 3:
+        label += "_{}".format(m)
+
+      G_fun.rename(label, label)
+      File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << G_fun
 
     return True
 

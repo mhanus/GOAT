@@ -266,3 +266,16 @@ assert M1_dofs.size == 0 or numpy.all(Qa_array[M1_dofs] == 0)
 D_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, pd.matname_reg_map['D'])]
 assert D_dofs.size == 0 or numpy.allclose(Qa_array[D_dofs], 1.9/(4*numpy.pi))
 assert D_dofs.size == 0 or numpy.all(Q_array[D_dofs] == 0)
+
+F = Function(dd.V0)
+G = Function(dd.V0)
+
+pd.get_FG(F, G, numpy.random.randint(0,dd.M), vis=True)
+
+# Assert correct source distribution
+
+F_array = F.vector().array()
+G_array = G.vector().array()
+
+assert numpy.all(F_array == Q_array + Qa_array)
+assert numpy.all(G_array == Q_array - Qa_array)
