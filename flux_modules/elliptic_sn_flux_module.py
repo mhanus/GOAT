@@ -240,7 +240,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     v = self.v[0]
 
     if init_slns_ary is None:
-      init_slns_ary = numpy.zeros((self.DD.G, self.DD.ndof1))
+      init_slns_ary = numpy.zeros((self.DD.G, self.local_sln_size))
 
     for g in range(self.DD.G):
       self.slns_mg[g].vector()[:] = init_slns_ary[g]
