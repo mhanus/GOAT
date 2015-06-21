@@ -155,11 +155,10 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
     n = FacetNormal(self.DD.mesh)
     i,p,q = ufl.indices(3)
-    
-    natural_boundaries = self.BC.vacuum_boundaries.union(self.BC.incoming_fluxes.keys())
 
     nonzero = lambda x: numpy.all(x > 0)
     nonzero_inc_flux = any(map(nonzero, self.BC.incoming_fluxes.values()))
+    nonzero_out_flux = any(map(nonzero, self.BC.outgoing_fluxes.values()))
 
     if nonzero_inc_flux and not self.fixed_source_problem:
       coupled_solver_error(__file__,
@@ -171,78 +170,63 @@ class EllipticSNFluxModule(flux_module.FluxModule):
       self.bnd_vector_form[g] = ufl.zero()
       self.bnd_matrix_form[g] = ufl.zero()
 
-    if natural_boundaries:
-      try:
-        ds = Measure("ds")[self.DD.boundaries]
-      except TypeError:
+    try:
+      ds = Measure("ds")[self.DD.boundaries]
+    except TypeError:
+      if nonzero_inc_flux or nonzero_out_flux:
         coupled_solver_error(__file__,
-                             "define boundary terms",
-                             "File assigning boundary indices to facets required if vacuum or incoming flux boundaries "
-                             "are specified.")
-          
-      for bnd_idx in natural_boundaries:
-        # NOTE: The following doesn't work because ufl.abs requires a function
-        #
-        #for g in range(self.DD.G):
-        #  self.bnd_matrix_form[g] += \
-        #    abs(self.tensors.G[p,q,i]*n[i])*self.u[g][q]*self.v[g][p]*ds(bnd_idx)
-        #
-        # NOTE: Instead, the following explicit loop has to be used; this makes tensors.G unneccessary
-        #
-        for pp in range(self.DD.M):
-          omega_p_dot_n = self.DD.ordinates_matrix[i,pp]*n[i]
+                               "define boundary terms",
+                               "File assigning boundary indices to facets required if vacuum or incoming flux "
+                               "boundaries are specified.")
+      else:
+        ds = Measure("ds")
 
-          for g in range(self.DD.G):
-            self.bnd_matrix_form[g] += \
-              abs(omega_p_dot_n)*self.tensors.Wp[pp]*self.u[g][pp]*self.v[g][pp]*ds(bnd_idx)
-    
-      if nonzero_inc_flux:
-        for pp in range(self.DD.M):
-          omega_p_dot_n = self.DD.ordinates_matrix[i,pp]*n[i]
-          
+
+    # NOTE: The following doesn't work because ufl.abs requires a function
+    #
+    #for g in range(self.DD.G):
+    #  self.bnd_matrix_form[g] += \
+    #    abs(self.tensors.G[p,q,i]*n[i])*self.u[g][q]*self.v[g][p]*ds()
+    #
+    # NOTE: Instead, the following explicit loop has to be used; this makes tensors.G unneccessary
+    #
+    for pp in range(self.DD.M):
+      omega_p_dot_n = self.DD.ordinates_matrix[i,pp]*n[i]
+
+      for g in range(self.DD.G):
+        self.bnd_matrix_form[g] += abs(omega_p_dot_n)*self.tensors.Wp[pp]*self.u[g][pp]*self.v[g][pp]*ds()
+
+    if nonzero_inc_flux or nonzero_out_flux:
+      for pp in range(self.DD.M):
+        omega_p_dot_n = self.DD.ordinates_matrix[i,pp]*n[i]
+
+        if nonzero_inc_flux:
+          bcs = ufl.conditional(omega_p_dot_n < 0, 1, ufl.zero())
+
           for bnd_idx, psi_inc in self.BC.incoming_fluxes.iteritems():
-              
+
             if psi_inc.shape != (self.DD.M, self.DD.G):
               coupled_solver_error(__file__,
                            "define boundary terms",
                            "Incoming flux with incorrect number of groups and directions specified: "+
                            "{}, expected ({}, {})".format(psi_inc.shape, self.DD.M, self.DD.G))
-            
 
-            # FIXME: Fix the use of ufl.conditional as shown in the ad-hoc code below
             for g in range(self.DD.G):
-              self.bnd_vector_form[g] += \
-                ufl.conditional(omega_p_dot_n < 0,
-                                -omega_p_dot_n*self.tensors.Wp[pp]*psi_inc[pp,g]*self.v[g][pp]*ds(bnd_idx),
-                                ufl.zero())  # FIXME: This assumes zero adjoint outgoing flux
-    else: # Apply vacuum b.c. everywhere
-      ds = Measure("ds")
+              self.bnd_vector_form[g] += bcs*psi_inc[pp,g]*omega_p_dot_n*self.tensors.Wp[pp]*self.v[g][pp]*ds(bnd_idx)
 
-      for pp in range(self.DD.M):
-        omega_p_dot_n = self.DD.ordinates_matrix[i,pp]*n[i]
+        if nonzero_out_flux:
+          bcs = ufl.conditional(omega_p_dot_n < 0, ufl.zero(), 1)
 
-        for g in range(self.DD.G):
-          self.bnd_matrix_form[g] += abs(omega_p_dot_n)*self.tensors.Wp[pp]*self.u[g][pp]*self.v[g][pp]*ds()
+          for bnd_idx, psi_out in self.BC.outgoing_fluxes.iteritems():
 
-    #FIXME: This is just an ad-hoc code to test adjoint b.c.
-    ds = Measure("ds")[self.DD.boundaries]
-    bnd_idx = self.BC.boundary_names_idx_map["N"]
+            if psi_out.shape != (self.DD.M, self.DD.G):
+              coupled_solver_error(__file__,
+                           "define boundary terms",
+                           "Outgoing flux with incorrect number of groups and directions specified: "+
+                           "{}, expected ({}, {})".format(psi_out.shape, self.DD.M, self.DD.G))
 
-    for pp in range(self.DD.M):
-      omega_p_dot_n = self.DD.ordinates_matrix[i,pp]*n[i]
-
-      for g in range(self.DD.G):
-        # DOLFIN BUG (?)
-        # Using the following code doesn't put code for computing normals to the form header file, preventing it from
-        #  compilation.
-        #bcv = ufl.conditional(omega_p_dot_n < 0, ufl.zero(), omega_p_dot_n*self.tensors.Wp[pp]*1.0)
-        #self.bnd_vector_form[g] += bcv*self.v[g][pp]*ds(bnd_idx)
-        #
-        # WORKAROUND
-        bcv = ufl.conditional(omega_p_dot_n < 0, ufl.zero(), 1.0)
-        self.bnd_vector_form[g] += bcv*omega_p_dot_n*self.tensors.Wp[pp]*self.v[g][pp]*ds(bnd_idx)
-
-
+            for g in range(self.DD.G):
+              self.bnd_vector_form[g] += bcs*psi_out[pp,g]*omega_p_dot_n*self.tensors.Wp[pp]*self.v[g][pp]*ds(bnd_idx)
 
   def solve_group_GS(self, it=0, init_slns_ary=None):
     if self.verb > 1: print0(self.print_prefix + "Solving..." )
