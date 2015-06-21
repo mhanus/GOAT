@@ -21,4 +21,4 @@ Plane Surface(11) = {9, 10};
 Plane Surface(12) = {10};
 Physical Surface("M1") = {12};
 Physical Surface("M2") = {11};
-Physical Line("vacuum") = {1, 2, 3, 4};
+Physical Line("vacuum") = {1,2,3,4};

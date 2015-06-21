@@ -19,7 +19,8 @@ def parse_material(data_file_name):
       'Ss': 'Ss',
       'nSf': 'nSf',
       'chi': 'chi',
-      'Q': 'Q'
+      'Q': 'Q',
+      'Qa': 'Qa'
     }
 
   with open(data_file_name, 'r') as f:
@@ -58,7 +59,7 @@ def parse_material(data_file_name):
         if xs == 'Ss':
           data_array = numpy.atleast_3d(data_array.reshape((-1,G,G)))
           K = data_array.shape[0]
-        elif xs == 'Q':
+        elif xs == 'Q' or xs == 'Qa':
           data_array = numpy.atleast_2d(data_array.reshape((-1,G)))
 
         # Save the transformed buffer to the output dictionary
@@ -87,7 +88,12 @@ def parse_material(data_file_name):
 
   xs_data['dimensions'] = (G, K)
 
-  # Save the dictionary of xs data
-  numpy.savez(os.path.splitext(data_file_name)[0] + '.npz', **xs_data)
+  # Save the dictionary of xs data.
+  # In parallel, all processes containing the same material in their mesh chunk parse the material data and get
+  # to this point, so a guard for writing is needed.
+  try:
+    numpy.savez(os.path.splitext(data_file_name)[0] + '.npz', **xs_data)
+  except (IOError, OSError):
+    pass
 
   return G, K

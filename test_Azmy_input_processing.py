@@ -80,6 +80,7 @@ t_init = dolfin_common.Timer("Init 0 ")
 PD = ProblemData(args.problem_name, args.core, args.mesh, args.verbosity)
 DD = Discretization(PD, args.SN_order, args.verbosity)
 PD.distribute_material_data(DD.cell_regions, DD.M)
+PD.distribute_boundary_fluxes()
 
 t_init.stop()
 
@@ -141,7 +142,7 @@ M1_dofs = DD.local_cell_dof_map[numpy.in1d(DD.cell_regions, PD.matname_reg_map['
 assert M2_dofs.size == 0 or numpy.allclose(Q_array[M1_dofs], 1/(4*numpy.pi))
 
 #=======================================================================================================================
-# TEST 1-3 - test mesh data imported from mesh modules
+# TEST 1-4 - test mesh data imported from mesh modules
 #
 
 # noinspection PyTypeChecker
@@ -154,6 +155,7 @@ def test_mesh_module(idx, core_spec=""):
   pd = ProblemData(args.problem_name, core_spec, "mesh{}".format(idx), args.verbosity)
   dd = Discretization(pd, args.SN_order, args.verbosity)
   pd.distribute_material_data(dd.cell_regions, dd.M)
+  pd.distribute_boundary_fluxes()
 
   t_init.stop()
 
@@ -191,7 +193,7 @@ def test_mesh_module(idx, core_spec=""):
   assert M2_dofs.size == 0 or numpy.all(Q_array[M2_dofs] == 0)
 
   M1_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, pd.matname_reg_map['M1'])]
-  assert M2_dofs.size == 0 or numpy.allclose(Q_array[M1_dofs], 1/(4*numpy.pi))
+  assert M1_dofs.size == 0 or numpy.allclose(Q_array[M1_dofs], 1/(4*numpy.pi))
 
   return pd.bc
 
@@ -201,6 +203,7 @@ bc1 = test_mesh_module(1)
 bc2 = test_mesh_module(2)
 bc3 = test_mesh_module(3, "core.dat")
 bc4 = test_mesh_module(4)
+bc5 = test_mesh_module(5, "core-outf.dat")
 
 assert bc2.vacuum_boundaries == bc1.vacuum_boundaries and \
        bc2.reflective_boundaries == bc1.reflective_boundaries and \
@@ -209,3 +212,57 @@ assert bc3.vacuum_boundaries == bc1.vacuum_boundaries and \
        bc3.reflective_boundaries == bc1.reflective_boundaries and \
        bc3.incoming_fluxes == bc1.incoming_fluxes
 assert bc4.all_vacuum()
+
+#=======================================================================================================================
+# TEST 5 - test adjoint mesh data
+#
+
+idx = 5
+
+print "======================"
+print "=       TEST {}      =".format(idx)
+print "======================"
+t_init = dolfin_common.Timer("Init {}".format(idx))
+
+pd = ProblemData(args.problem_name, "core-outf.dat", "mesh{}".format(idx), args.verbosity)
+dd = Discretization(pd, args.SN_order, args.verbosity)
+pd.distribute_material_data(dd.cell_regions, dd.M)
+pd.distribute_boundary_fluxes()
+
+t_init.stop()
+
+init_timings_table = dolfin_common.timings(True)
+print_timings( init_timings_table, args.verbosity > 0,
+               os.path.join(pd.out_folder, "timings{}.txt".format(idx)))
+
+pd.core.info()
+pd.bc.info()
+
+assert pd.G == 1
+assert pd.scattering_order == 1
+
+dd.print_diagnostics()
+dd.visualize_mesh_data()
+
+Q = Function(dd.V0)
+Qa = Function(dd.V0)
+
+pd.get_Q(Q, numpy.random.randint(0,dd.M), adjoint=False, vis=True)
+pd.get_Q(Qa, numpy.random.randint(0,dd.M), adjoint=True, vis=True)
+
+# Assert correct source distribution
+
+Q_array = Q.vector().array()
+Qa_array = Qa.vector().array()
+
+M2_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, pd.matname_reg_map['M2'])]
+assert M2_dofs.size == 0 or numpy.all(Q_array[M2_dofs] == 0)
+assert M2_dofs.size == 0 or numpy.all(Qa_array[M2_dofs] == 0)
+
+M1_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, pd.matname_reg_map['M1'])]
+assert M1_dofs.size == 0 or numpy.allclose(Q_array[M1_dofs], 1/(4*numpy.pi))
+assert M1_dofs.size == 0 or numpy.all(Qa_array[M1_dofs] == 0)
+
+D_dofs = dd.local_cell_dof_map[numpy.in1d(dd.cell_regions, pd.matname_reg_map['D'])]
+assert D_dofs.size == 0 or numpy.allclose(Qa_array[D_dofs], 1.9/(4*numpy.pi))
+assert D_dofs.size == 0 or numpy.all(Q_array[D_dofs] == 0)

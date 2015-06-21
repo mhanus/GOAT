@@ -122,6 +122,12 @@ class ProblemData(object):
         except AttributeError:
           pass
 
+      if len(self.bc.outgoing_fluxes) == 0:
+        try:
+          self.bc.outgoing_fluxes = self.mesh_module.outgoing_fluxes
+        except AttributeError:
+          pass
+
   def mesh_data_from_module(self, name):
     try:
       return sys.modules[name]
@@ -191,6 +197,23 @@ class ProblemData(object):
         l += self.bc.parse_boundaries(lines[l:])
         continue
 
+  def distribute_boundary_fluxes(self):
+    for idx, flx in self.bc.incoming_fluxes.iteritems():
+      if len(flx) == 1:
+        self.bc.incoming_fluxes[idx] = 1./(4*numpy.pi)*numpy.repeat(flx,self.M,0)
+      else:
+        assert len(flx) >= self.M
+        self.bc.incoming_fluxes[idx] = numpy.array(flx[:self.M])
+      assert self.bc.incoming_fluxes[idx].shape == (self.M, self.G)
+
+    for idx, flx in self.bc.outgoing_fluxes.iteritems():
+      if len(flx) == 1:
+        self.bc.outgoing_fluxes[idx] = 1./(4*numpy.pi)*numpy.repeat(flx,self.M,0)
+      else:
+        assert len(flx) >= self.M
+        self.bc.outgoing_fluxes[idx] = numpy.array(flx[:self.M])
+      assert self.bc.outgoing_fluxes[idx].shape == (self.M, self.G)
+
   def data_file_name(self, mat_name):
     return os.path.join(self.folder, "MATERIALS", mat_name + ".npz")
 
@@ -248,7 +271,7 @@ class ProblemData(object):
                              "DETAILS:  " + str(e))
 
       for xs, xsd in xs_data.iteritems():
-        if xs == 'Q':
+        if xs == 'Q' or xs == 'Qa':
           if xsd.shape[0] == 1:
             # expand isotropic source to all directions
             xsd = numpy.repeat(xsd,M,0)
@@ -317,14 +340,14 @@ class ProblemData(object):
     return True
 
 
-  def get_Q(self, Q_fun, m=0, gto=0, vis=False):
+  def get_Q(self, Q_fun, m=0, gto=0, adjoint=False, vis=False):
     assert (0 <= gto < self.G)
     assert (0 <= m < self.M)
 
     timer = Timer("Fetching XS")
 
     try:
-      xsd = self.xsd["Q"]
+      xsd = self.xsd["Qa"] if adjoint else self.xsd["Q"]
     except KeyError:
       return False
 
@@ -527,6 +550,7 @@ class BoundaryData(object):
     self.vacuum_boundaries = set()
     self.reflective_boundaries = set()
     self.incoming_fluxes = defaultdict(list)
+    self.outgoing_fluxes = defaultdict(list)
 
   def info(self):
     if MPI.rank(comm) != 0:
@@ -538,6 +562,8 @@ class BoundaryData(object):
     print "\nReflective boundaries:", self.reflective_boundaries
     print "\nIncoming fluxes:"
     print self.incoming_fluxes
+    print "\nOutgoing fluxes:"
+    print self.outgoing_fluxes
 
   def all_vacuum(self):
     return len(self.reflective_boundaries) == 0 and len(self.incoming_fluxes) == 0
@@ -553,19 +579,19 @@ class BoundaryData(object):
     while l < len(lines)-1:
       l += 1
 
-      if lines[l].startswith('*'):
-        continue
-
       data = lines[l].strip()
+
+      if data.lower() == "end":
+        break
+
+      if data.startswith('*'):
+        continue
 
       if len(data) == 0:
         continue
 
       l += 1
       l += self.__parse_bc(data, lines[l:])
-
-      if lines[l].lower() == "end":
-        break
 
     return l
 
@@ -586,6 +612,8 @@ class BoundaryData(object):
         # TODO: Invalid boundary error
         raise
 
+    mode = ""
+
     for li, line in enumerate(lines):
       if line.startswith("*"):
         continue
@@ -595,34 +623,29 @@ class BoundaryData(object):
       if len(data) == 0:
         continue
 
-      if data == "v" or data == "vacuum":
+      if data == "v":
         self.vacuum_boundaries.add(idx)
-        return li
-      elif data == "r" or data == "reflective":
+        continue
+      elif data == "r":
         self.reflective_boundaries.add(idx)
-        return li
+        continue
+      elif data == "i":
+        mode = "i"
+        continue
+      elif data == "o":
+        mode = "o"
+        continue
 
       data = data.replace(',', ' ').replace(';', ' ').split()
-      set().update()
+
       try:
-        self.incoming_fluxes[idx].append(map(float, data))
+        if mode == "i":
+          self.incoming_fluxes[idx].append(map(float, data))
+        elif mode == "o":
+          self.outgoing_fluxes[idx].append(map(float, data))
+        else:
+          raise ValueError
       except ValueError:
-        # Encountered not-a-list-of-numbers => possibly a new boundary - finalize the inc. fluxes array for current
-        # boundary and return
-        self.incoming_fluxes[idx] = numpy.array(self.incoming_fluxes[idx])
-
-        # Check consistency of incoming fluxes; intended use of attributes M, G (number of discrete
-        # directions/groups) is to ensure consistency between specified boundary data and the Discretization object (
-        # possibly repeating single group-flux vector loaded here M-times and dividing by 4pi (isotropic incoming flux).
-        try:
-          assert self.incoming_fluxes[idx].shape == (self.M, self.G)
-        except AttributeError:
-          try:
-            self.M, self.G = self.incoming_fluxes[idx].shape
-          except ValueError:
-            #TODO: Invalid boundary data error
-            raise
-
-        return li
+        return li-1
 
     return -1

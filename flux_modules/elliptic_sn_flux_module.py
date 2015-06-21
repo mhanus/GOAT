@@ -142,6 +142,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
         for g in range(self.DD.G)
       ]
 
+    PD.distribute_boundary_fluxes()
     self.__define_boundary_terms()
 
   # TODO: Reflective boundary conditions  
