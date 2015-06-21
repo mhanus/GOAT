@@ -360,7 +360,7 @@ class ProblemData(object):
       return False
 
     if vis:
-      label = "Q"
+      label = "Qa" if adjoint else "Q"
 
       if self.G > 0:
         label += "_{}".format(gto)
