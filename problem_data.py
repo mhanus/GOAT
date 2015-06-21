@@ -401,31 +401,35 @@ class ProblemData(object):
     if numpy.all(Q_values == 0) and numpy.all(Qa_values == 0):
       return False
 
-    F_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values + Qa_values)
-    G_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values - Qa_values)
+    if F_fun is not None:
+      F_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values + Qa_values)
 
-    if vis:
-      label = "F"
+      if vis:
+        label = "F"
 
-      if self.G > 0:
-        label += "_{}".format(gto)
+        if self.G > 0:
+          label += "_{}".format(gto)
 
-      if self.M > 1 and Q.ndim == 3:
-        label += "_{}".format(m)
+        if self.M > 1 and Q.ndim == 3:
+          label += "_{}".format(m)
 
-      F_fun.rename(label, label)
-      File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << F_fun
+        F_fun.rename(label, label)
+        File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << F_fun
 
-      label = "G"
+    if G_fun is not None:
+      G_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values - Qa_values)
 
-      if self.G > 0:
-        label += "_{}".format(gto)
+      if vis:
+        label = "G"
 
-      if self.M > 1 and Qa.ndim == 3:
-        label += "_{}".format(m)
+        if self.G > 0:
+          label += "_{}".format(gto)
 
-      G_fun.rename(label, label)
-      File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << G_fun
+        if self.M > 1 and Qa.ndim == 3:
+          label += "_{}".format(m)
+
+        G_fun.rename(label, label)
+        File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << G_fun
 
     return True
 

@@ -298,23 +298,21 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
         if self.fixed_source_problem:
           if self.PD.isotropic_source_everywhere:
-            self.PD.get_Q(self.fixed_source, 0, gto)
-            # FIXME: This assumes that adjoint source == 0
-            form = 0.5 * self.fixed_source * self.tensors.Wp[p]*v[p]*dx + self.bnd_vector_form[gto]
-            # Add the adjoint part
+            self.PD.get_FG(self.src_F, self.src_G, 0, gto)
+
+            form = self.src_F * self.tensors.Wp[p]*v[p]*dx + self.bnd_vector_form[gto]
             # This somehow doesn't work
-            #form += 0.5 * self.fixed_source * self.D*self.DD.ordinates_matrix[i,p]*self.tensors.Wp[p]*v[p].dx(i) * dx
+            #form += self.src_G * self.D*self.DD.ordinates_matrix[i,p]*self.tensors.Wp[p]*v[p].dx(i) * dx
             # workaround:
             for n in range(self.DD.M):
-              form += 0.5 * self.D*self.DD.ordinates_matrix[i,n]*self.tensors.Wp[n]*self.fixed_source*v[n].dx(i) * dx
+              form += self.src_G * self.D*self.DD.ordinates_matrix[i,n]*self.tensors.Wp[n]*v[n].dx(i) * dx
           else:
             form = self.bnd_vector_form[gto]
             for n in range(self.DD.M):
-              self.PD.get_Q(self.fixed_source, n, gto)
-              # FIXME: This assumes that adjoint source == 0
-              form += 0.5 * self.fixed_source * self.tensors.Wp[n] * v[n] * dx
-              # Add the adjoint part
-              form += 0.5 * self.D*self.DD.ordinates_matrix[i,n]*self.tensors.Wp[n]*self.fixed_source*v[n].dx(i) * dx
+              self.PD.get_FG(self.src_F, self.src_G, n, gto)
+
+              form += self.src_F * self.tensors.Wp[n] * v[n] * dx
+              form += self.src_G * self.D*self.DD.ordinates_matrix[i,n]*self.tensors.Wp[n]*v[n].dx(i) * dx
 
           ass_timer.start()
 
@@ -358,17 +356,15 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
             ass_timer.stop()
 
-            # Add the term corresponding to the adjoint part of source
-            # FIXME: This assumes that adjoint source == 0
             if self.fixed_source_problem:
               if self.PD.isotropic_source_everywhere:
-                self.PD.get_Q(self.fixed_source, 0, gfrom)
-                form = 0.5 * self.tensors.QtT[p,i,k1]*Cd[k1,k2]*self.tensors.Q[k2,q]*self.fixed_source*v[p].dx(i) * dx
+                self.PD.get_FG(None, self.src_G, 0, gfrom)
+                form = self.src_G * self.tensors.QtT[p,i,k1]*Cd[k1,k2]*self.tensors.Q[k2,q]*v[p].dx(i) * dx
               else:
                 form = ufl.zero()
                 for n in range(self.DD.M):
-                  self.PD.get_Q(self.fixed_source, n, gfrom)
-                  form += 0.5 * self.tensors.QtT[p,i,k1]*Cd[k1,k2]*self.tensors.Q[k2,n]*self.fixed_source*v[p].dx(i)* dx
+                  self.PD.get_FG(None, self.src_G, n, gfrom)
+                  form += self.src_G * self.tensors.QtT[p,i,k1]*Cd[k1,k2]*self.tensors.Q[k2,n]*v[p].dx(i)* dx
 
             ass_timer.start()
             assemble(form, tensor=self.Q, finalize_tensor=False, add_values=add_values_Q)
@@ -455,15 +451,15 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
       if self.fixed_source_problem:
         if self.PD.isotropic_source_everywhere:
-          self.PD.get_Q(self.fixed_source, 0, gto)
-          # FIXME: This assumes that adjoint source == forward source
-          form = self.fixed_source * self.tensors.Wp[p] * self.v[gto][p] * dx + self.bnd_vector_form[gto]
+          self.PD.get_FG(self.src_F, None, 0, gto)
+          # FIXME: This assumes that adjoint source == forward source (i.e. self.src_G == 0)
+          form = self.src_F * self.tensors.Wp[p] * self.v[gto][p] * dx + self.bnd_vector_form[gto]
         else:
-          form =  self.bnd_vector_form[gto]
+          form = self.bnd_vector_form[gto]
           for n in range(self.DD.M):
-            self.PD.get_Q(self.fixed_source, n, gto)
-            # FIXME: This assumes that adjoint source == forward source
-            form += self.fixed_source * self.tensors.Wp[n] * self.v[gto][n] * dx
+            self.PD.get_FG(self.src_F, None, n, gto)
+            # FIXME: This assumes that adjoint source == forward source (i.e. self.src_G == 0)
+            form += self.src_F * self.tensors.Wp[n] * self.v[gto][n] * dx
 
         ass_timer.start()
 
@@ -545,13 +541,12 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     # TODO: Move to Discretization
     V11 = FunctionSpace(self.DD.mesh, "CG", self.DD.parameters["p"])
 
-    # FIXME: This assumes that adjoint source == 0
-    # FIXME: This also assumes all-isotropic source
+    # FIXME: This assumes all-isotropic source
     for gto in range(self.DD.G):
       self.PD.get_xs('D', self.D, gto)
-      self.PD.get_Q(self.fixed_source, 0, gto)
+      self.PD.get_FG(None, self.src_G, 0, gto)
 
-      expr = self.D*( ufl.as_vector([0.5*self.fixed_source]*self.DD.M) -
+      expr = self.D*( ufl.as_vector([self.src_G]*self.DD.M) -
                       ufl.diag_vector(ufl.as_matrix(self.DD.ordinates_matrix[i,p]*self.slns_mg[gto][q].dx(i), (p,q))) )
 
       for gfrom in range(self.DD.G):
@@ -574,11 +569,9 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
           expr -= ufl.as_vector(CC[p,q,i] * self.slns_mg[gfrom][q].dx(i), p)
 
-          # Add the term corresponding to the adjoint part of source
-          # FIXME: This assumes that adjoint source == 0
           for qq in range(self.DD.M):
-            self.PD.get_Q(self.fixed_source, qq, gfrom)
-            expr += ufl.as_vector(self.tensors.Y[p,k1] * Cd[k1,k2] * self.tensors.Q[k2,qq] * 0.5*self.fixed_source, p)
+            self.PD.get_FG(None, self.src_G, qq, gfrom)
+            expr += ufl.as_vector(self.tensors.Y[p,k1] * Cd[k1,k2] * self.tensors.Q[k2,qq] * self.src_G, p)
 
       # project(form, self.DD.Vpsi1, function=self.aux_slng, preconditioner_type="petsc_amg")
       # FASTER, but requires form compilation for each dir.:

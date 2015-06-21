@@ -167,7 +167,8 @@ class FluxModule(object):
     self.vals_B = None
 
     if self.fixed_source_problem:
-      self.fixed_source = Function(self.DD.V0)
+      self.src_F = Function(self.DD.V0)
+      self.src_G = Function(self.DD.V0)
       self.vals_Q = None
 
     # multigroup scalar fluxes
