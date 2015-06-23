@@ -42,6 +42,7 @@ def get_parameters():
     Parameters(
       "visualization",
       flux = 1,
+      err_ind = 1,
       cell_powers = 0
     )
   )
@@ -182,6 +183,11 @@ class FluxModule(object):
     self.sln_vec = as_backend_type(self.sln.vector())
     self.local_sln_size = self.sln_vec.local_size()
 
+    # error indicator function
+    self.err_ind_fun = Function(self.DD.V0)
+    self.err_ind_fun.rename("err_ind", "error_indicators")
+    self.err_ind_vec = self.err_ind_fun.vector()
+
     # auxiliary function for storing various DG(0) quantities (cross sections, group-integrated reaction rates, etc.)
     self.R = Function(self.DD.V0)
 
@@ -226,6 +232,8 @@ class FluxModule(object):
     self.vis_files = dict()
     var = "cell_powers"
     self.vis_files[var] = File(os.path.join(self.vis_folder, var+".pvd"), "compressed")
+    var = "err_ind"
+    self.vis_files[var] = File(os.path.join(self.vis_folder, var+".pvd"), "compressed")
     var = "flux"
     self.vis_files[var] = [
       File(os.path.join(self.vis_folder, "{}_g{}.pvd".format(var, g)), "compressed") for g in range(self.DD.G)
@@ -233,6 +241,8 @@ class FluxModule(object):
 
     variables = self.parameters["saving"].iterkeys()
     self.save_folder = { k : os.path.join(self.PD.out_folder, k.upper()) for k in variables }
+
+    self.tot_err_est = 0
 
   # noinspection PyTypeChecker
   def save_algebraic_system(self, mat_file_name=None, it=0):
@@ -354,7 +364,9 @@ class FluxModule(object):
     if self.verb > 2:
       if self.eigenproblem:
         print0(self.print_prefix + "keff = {}".format(self.keff))
-        print0(self.print_prefix + "Residual norm: {}".format(self.residual_norm()))
+
+      print0(self.print_prefix + "Auxiliary residual norm: {}".format(self.residual_norm()))
+      print0(self.print_prefix + "Total error estimate: {}".format(self.tot_err_est))
 
   def eigenvalue_residual_norm(self, norm_type='l2'):
     r = PETScVector()
@@ -487,7 +499,7 @@ class FluxModule(object):
   def normalize_cell_powers(self):
     assert self.up_to_date["cell_powers"]
 
-    P = MPI.sum(numpy.sum(self.E))
+    P = MPI.sum(comm, numpy.sum(self.E))
 
     if self.verb > 2:
       print0(self.print_prefix + "  desired power: " + str(self.PD.core.power))

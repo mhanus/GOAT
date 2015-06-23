@@ -94,6 +94,7 @@ print_timings(init_timings_table, args.verbosity > 0)
 #
 
 FM.solve()
+FM.compute_errors()
 FM.print_results()
 FM.visualize()
 

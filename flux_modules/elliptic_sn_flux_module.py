@@ -4,10 +4,11 @@ Created on 11.5.2014
 @author: mhanus
 """
 # TODO: try-except for dolfin imports
+# TODO: Every form that contains T^{-1} must be changed in order to allow fission
 import os
 
-from dolfin.cpp.common import Timer, Parameters,warning
-from dolfin import assemble, Function, FacetNormal, split, project,parameters,FunctionSpace
+from dolfin.cpp.common import Timer, Parameters,warning,MPI
+from dolfin import assemble, Function, FacetNormal, split, project,parameters,FunctionSpace,norm
 from dolfin import solve as dolfin_solve
 from dolfin.cpp.function import FunctionAssigner,assign
 from dolfin.cpp.io import File
@@ -16,7 +17,7 @@ from ufl.integral import Measure
 from ufl.objects import dx
 import numpy
 
-from common import delta, print0, coupled_solver_error
+from common import delta, print0, coupled_solver_error,comm
 from discretization_modules.discretizations import SNDiscretization
 import flux_module
 
@@ -196,37 +197,33 @@ class EllipticSNFluxModule(flux_module.FluxModule):
       for g in range(self.DD.G):
         self.bnd_matrix_form[g] += abs(omega_p_dot_n)*self.tensors.Wp[pp]*self.u[g][pp]*self.v[g][pp]*ds()
 
-    if nonzero_inc_flux or nonzero_out_flux:
-      for pp in range(self.DD.M):
-        omega_p_dot_n = self.DD.ordinates_matrix[i,pp]*n[i]
+      if nonzero_inc_flux:
+        bcs = ufl.conditional(omega_p_dot_n < 0, -1, ufl.zero())
 
-        if nonzero_inc_flux:
-          bcs = ufl.conditional(omega_p_dot_n < 0, 1, ufl.zero())
+        for bnd_idx, psi_inc in self.BC.incoming_fluxes.iteritems():
 
-          for bnd_idx, psi_inc in self.BC.incoming_fluxes.iteritems():
+          if psi_inc.shape != (self.DD.M, self.DD.G):
+            coupled_solver_error(__file__,
+                         "define boundary terms",
+                         "Incoming flux with incorrect number of groups and directions specified: "+
+                         "{}, expected ({}, {})".format(psi_inc.shape, self.DD.M, self.DD.G))
 
-            if psi_inc.shape != (self.DD.M, self.DD.G):
-              coupled_solver_error(__file__,
-                           "define boundary terms",
-                           "Incoming flux with incorrect number of groups and directions specified: "+
-                           "{}, expected ({}, {})".format(psi_inc.shape, self.DD.M, self.DD.G))
+          for g in range(self.DD.G):
+            self.bnd_vector_form[g] += bcs*psi_inc[pp,g]*omega_p_dot_n*self.tensors.Wp[pp]*self.v[g][pp]*ds(bnd_idx)
 
-            for g in range(self.DD.G):
-              self.bnd_vector_form[g] += bcs*psi_inc[pp,g]*omega_p_dot_n*self.tensors.Wp[pp]*self.v[g][pp]*ds(bnd_idx)
+      if nonzero_out_flux:
+        bcs = ufl.conditional(omega_p_dot_n < 0, ufl.zero(), 1)
 
-        if nonzero_out_flux:
-          bcs = ufl.conditional(omega_p_dot_n < 0, ufl.zero(), 1)
+        for bnd_idx, psi_out in self.BC.outgoing_fluxes.iteritems():
 
-          for bnd_idx, psi_out in self.BC.outgoing_fluxes.iteritems():
+          if psi_out.shape != (self.DD.M, self.DD.G):
+            coupled_solver_error(__file__,
+                         "define boundary terms",
+                         "Outgoing flux with incorrect number of groups and directions specified: "+
+                         "{}, expected ({}, {})".format(psi_out.shape, self.DD.M, self.DD.G))
 
-            if psi_out.shape != (self.DD.M, self.DD.G):
-              coupled_solver_error(__file__,
-                           "define boundary terms",
-                           "Outgoing flux with incorrect number of groups and directions specified: "+
-                           "{}, expected ({}, {})".format(psi_out.shape, self.DD.M, self.DD.G))
-
-            for g in range(self.DD.G):
-              self.bnd_vector_form[g] += bcs*psi_out[pp,g]*omega_p_dot_n*self.tensors.Wp[pp]*self.v[g][pp]*ds(bnd_idx)
+          for g in range(self.DD.G):
+            self.bnd_vector_form[g] += bcs*psi_out[pp,g]*omega_p_dot_n*self.tensors.Wp[pp]*self.v[g][pp]*ds(bnd_idx)
 
   def solve_group_GS(self, it=0, init_slns_ary=None):
     if self.verb > 1: print0(self.print_prefix + "Solving..." )
@@ -382,9 +379,12 @@ class EllipticSNFluxModule(flux_module.FluxModule):
                 assemble(form, tensor=self.Q, finalize_tensor=False, add_values=add_values_Q)
               else:
                 # NOTE: Fixed-source case (eigenproblems can currently be solved only by the coupled-group scheme)
-                if self.fixed_source_problem:
-                  form = -self.chi*self.R/(4*numpy.pi)*self.tensors.QT[p,0]*self.tensors.Q[0,q]*u[q]*v[p]*dx
-                  assemble(form, tensor=self.A, finalize_tensor=False, add_values=add_values_A)
+                # FIXME: The following code should be OK, but it will require changing some of the previous forms to
+                # actually contain fission contribution to T^{-1}.
+                # if self.fixed_source_problem:
+                #   form = -self.chi*self.R/(4*numpy.pi)*self.tensors.QT[p,0]*self.tensors.Q[0,q]*u[q]*v[p]*dx
+                #   assemble(form, tensor=self.A, finalize_tensor=False, add_values=add_values_A)
+                raise NotImplementedError # This effectively makes nSf unusable
 
               ass_timer.stop()
 
@@ -414,6 +414,8 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
 
   def assemble_algebraic_system(self):
+    if self.eigenproblem:
+      raise NotImplementedError   # This effectively prevents anybody to solve the eigenvalue problems
     
     if self.verb > 1: print0(self.print_prefix + "Assembling algebraic system.")
 
@@ -421,7 +423,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     ass_timer = Timer("---- MTX: Assembling")
     
     add_values_A = False
-    add_values_B = False
+    #add_values_B = False
     add_values_Q = False
      
     for gto in range(self.DD.G):
@@ -432,8 +434,8 @@ class EllipticSNFluxModule(flux_module.FluxModule):
       if self.verb > 3 and self.DD.G > 1:
         print spc + 'GROUP [', gto, ',', gto, '] :'
       
-      pres_fiss = self.PD.get_xs('chi', self.chi, gto)
-  
+      #pres_fiss = self.PD.get_xs('chi', self.chi, gto)
+
       self.PD.get_xs('D', self.D, gto)
       self.PD.get_xs('St', self.R, gto)
       
@@ -499,31 +501,34 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
           ass_timer.stop()
             
-        if pres_fiss:
-          pres_nSf = self.PD.get_xs('nSf', self.R, gfrom)
-           
-          if pres_nSf:
-            ass_timer.start()
-            
-            if self.fixed_source_problem:
-              form = -self.chi*self.R/(4*numpy.pi)*\
-                     self.tensors.QT[p,0]*self.tensors.Q[0,q]*self.u[gfrom][q]*self.v[gto][p]*dx
-              assemble(form, tensor=self.A, finalize_tensor=False, add_values=add_values_A)
-            else:
-              form = self.chi*self.R/(4*numpy.pi)*\
-                     self.tensors.QT[p,0]*self.tensors.Q[0,q]*self.u[gfrom][q]*self.v[gto][p]*dx
-              assemble(form, tensor=self.B, finalize_tensor=False, add_values=add_values_B)
-              add_values_B = True
+        # TODO: Add fission part (previous form would have to change too, as T^{-1} will actually need to contain a
+        # fission term too.
 
-            ass_timer.stop()
+        # if pres_fiss:
+        #   pres_nSf = self.PD.get_xs('nSf', self.R, gfrom)
+        #
+        #   if pres_nSf:
+        #     ass_timer.start()
+        #
+        #     if self.fixed_source_problem:
+        #       form = -self.chi*self.R/(4*numpy.pi)*\
+        #              self.tensors.QT[p,0]*self.tensors.Q[0,q]*self.u[gfrom][q]*self.v[gto][p]*dx
+        #       assemble(form, tensor=self.A, finalize_tensor=False, add_values=add_values_A)
+        #     else:
+        #       form = self.chi*self.R/(4*numpy.pi)*\
+        #              self.tensors.QT[p,0]*self.tensors.Q[0,q]*self.u[gfrom][q]*self.v[gto][p]*dx
+        #       assemble(form, tensor=self.B, finalize_tensor=False, add_values=add_values_B)
+        #       add_values_B = True
+        #
+        #     ass_timer.stop()
     
     #=============================  END LOOP OVER GROUPS AND ASSEMBLE  ===============================
                         
     self.A.apply("add")
     if self.fixed_source_problem:
       self.Q.apply("add")
-    elif self.eigenproblem:
-      self.B.apply("add")
+    #if self.eigenproblem:
+    #  self.B.apply("add")
 
                     
   def solve(self, it=0):
@@ -614,6 +619,8 @@ class EllipticSNFluxModule(flux_module.FluxModule):
   def visualize(self, it=0):
     super(EllipticSNFluxModule, self).visualize()
 
+    # TODO: Check if psi, adj_psi, err_ind have been actually computed
+
     labels = ["psi", "adj_psi"]
     functs = [self.psi_mg, self.adj_psi_mg]
     for var,lbl,fnc in zip(["angular_flux", "adjoint_angular_flux"], labels, functs):
@@ -628,3 +635,95 @@ class EllipticSNFluxModule(flux_module.FluxModule):
             fgn = fnc[g].sub(n)
             fgn.rename(lbl, "{}_g{}_{}".format(lbl, g, n))
             self.vis_files[var][g][n] << (fgn, float(it))
+
+    var = "err_ind"
+    try:
+      should_vis = divmod(it, self.parameters["visualization"][var])[1] == 0
+    except ZeroDivisionError:
+      should_vis = False
+
+    if should_vis:
+      self.vis_files[var] << (self.err_ind_fun, float(it))
+
+  def compute_errors(self):
+    if self.eigenproblem:
+      raise NotImplementedError
+
+    est_timer = Timer("-- Error estimation")
+
+    form = ufl.zero()
+
+    i,p,q,k1,k2 = ufl.indices(5)
+
+    # Boundary terms
+
+    n = FacetNormal(self.DD.mesh)
+
+    nonzero = lambda x: numpy.all(x > 0)
+    nonzero_inc_flux = any(map(nonzero, self.BC.incoming_fluxes.values()))
+
+    try:
+      ds = Measure("ds")[self.DD.boundaries]
+    except TypeError:
+      ds = Measure("ds")
+
+    for pp in range(self.DD.M):
+      omega_p_dot_n = self.DD.ordinates_matrix[i,pp]*n[i]
+      bcs = ufl.conditional(omega_p_dot_n < 0, -1, ufl.zero())
+
+      for g in range(self.DD.G):
+        form += omega_p_dot_n*self.tensors.Wp[pp]*self.psi_mg[g][pp]*self.adj_psi_mg[g][pp] * self.v0 * ds()
+
+      if nonzero_inc_flux:
+        for bnd_idx, psi_inc in self.BC.incoming_fluxes.iteritems():
+          for g in range(self.DD.G):
+            form -= bcs*psi_inc[pp,g]*omega_p_dot_n*self.tensors.Wp[pp]*self.adj_psi_mg[g][pp] * self.v0 * ds(bnd_idx)
+
+    # Volumetric terms
+
+    for gto in range(self.DD.G):
+      self.PD.get_xs('St', self.R, gto)
+
+      form += (
+        self.tensors.G[p,q,i]*self.psi_mg[gto][q].dx(i)*self.adj_psi_mg[gto][p] +
+        self.R * self.tensors.W[p,q]*self.psi_mg[gto][q]*self.adj_psi_mg[gto][p]
+      ) * self.v0 * dx
+
+      if self.PD.isotropic_source_everywhere:
+        self.PD.get_Q(self.src_F, 0, gto)
+        form -= self.src_F * self.tensors.Wp[p]*self.adj_psi_mg[gto][p] * self.v0 * dx
+      else:
+        for pp in range(self.DD.M):
+          self.PD.get_Q(self.src_F, n, gto)
+          form -= self.src_F * self.tensors.Wp[pp]*self.adj_psi_mg[gto][pp] * self.v0 * dx
+
+      for gfrom in range(self.DD.G):
+        pres_Ss = False
+
+        # TODO: Enlarge self.S and self.C to (L+1)^2 (or 1./2.*(L+1)*(L+2) in 2D) to accomodate for anisotropic
+        # scattering (lines below using CC, SS are correct only for L = 0, when the following inner loop runs only
+        # once.
+        for l in range(self.L+1):
+          for m in range(-l, l+1):
+            if self.DD.angular_quad.get_D() == 2 and divmod(l+m, 2)[1] == 0:
+              continue
+
+            pres_Ss |= self.PD.get_xs('Ss', self.S[l], gto, gfrom, l)
+
+        if pres_Ss:
+          Sd = ufl.diag(self.S)
+          SS = self.tensors.QT[p,k1]*Sd[k1,k2]*self.tensors.Q[k2,q]
+
+          form -= SS[p,q]*self.psi_mg[gfrom][q]*self.adj_psi_mg[gto][p] * self.v0 * dx
+
+        # TODO: Fission part
+
+    # Assemble error indicators
+    ass_timer = Timer("---- ERR: Assembling")
+    assemble(form, tensor=self.err_ind_vec)
+    ass_timer.stop()
+
+    # Calculate total error
+    self.tot_err_est = abs(MPI.sum(comm, numpy.sum(self.err_ind_vec.array())))
+
+    self.err_ind_fun.vector()[:] = self.err_ind_vec
