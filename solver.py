@@ -74,7 +74,7 @@ from problem_data import ProblemData
 #=======================================================================================================================
 # MODULES INITIALIZATION - discretization, problem specs, materials, T/H feedback, flux solver
 #
-t_init = dolfin_common.Timer("- Complete initialization phase")
+t_init = dolfin_common.Timer("1     Complete initialization")
 
 if args.verbosity > 1: print "Process {}: initializing...".format(MPI.rank(comm))
 

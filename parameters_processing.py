@@ -13,8 +13,8 @@ def set_default_dolfin_parameters():
   dolfin.parameters['form_compiler']['optimize'] = True
   dolfin.parameters['form_compiler']['cpp_optimize'] = True
   dolfin.parameters['form_compiler']['cpp_optimize_flags'] = '-O3'
-  #parameters['form_compiler']['representation'] = 'quadrature'
-  #parameters["form_compiler"]["quadrature_degree"] = 2
+  #dolfin.parameters['form_compiler']['representation'] = 'quadrature'
+  #dolfin.parameters["form_compiler"]["quadrature_degree"] = 2
 
 
 # noinspection PyArgumentList

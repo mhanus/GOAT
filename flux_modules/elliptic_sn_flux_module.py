@@ -233,10 +233,10 @@ class EllipticSNFluxModule(flux_module.FluxModule):
                            "solve using group GS",
                            "Group Gauss-Seidel for eigenproblem not yet supported")
     
-    sol_timer = Timer("-- Complete solution")
-    mat_timer = Timer("---- MTX: Complete construction")
-    ass_timer = Timer("---- MTX: Assembling")
-    sln_timer = Timer("---- SOL: Solving")
+    sol_timer = Timer("2     Complete solution")
+    mat_timer = Timer("2.1   Complete matrix construction")
+    ass_timer = Timer("2.1.1 Matrix assembling")
+    sln_timer = Timer("2.2   Solving")
 
     # To simplify the weak forms
     u = self.u[0]
@@ -419,8 +419,8 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     
     if self.verb > 1: print0(self.print_prefix + "Assembling algebraic system.")
 
-    mat_timer = Timer("---- MTX: Complete construction")
-    ass_timer = Timer("---- MTX: Assembling")
+    mat_timer = Timer("2.1   Complete matrix construction")
+    ass_timer = Timer("2.1.1 Matrix assembling")
     
     add_values_A = False
     #add_values_B = False
@@ -540,8 +540,8 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
     i,p,q,k1,k2 = ufl.indices(5)
 
-    sol_timer = Timer("-- Complete solution")
-    aux_timer = Timer("---- SOL: Computing angular flux + adjoint")
+    sol_timer = Timer("2     Complete solution")
+    aux_timer = Timer("2.3   Computing angular flux + adjoint")
 
     # TODO: Move to Discretization
     V11 = FunctionSpace(self.DD.mesh, "CG", self.DD.parameters["p"])
@@ -587,7 +587,8 @@ class EllipticSNFluxModule(flux_module.FluxModule):
       self.adj_psi_mg[gto].assign(self.slns_mg[gto] - self.aux_slng)
 
   def update_phi(self):
-    timer = Timer("Scalar flux update")
+    tot_t = Timer("2     Complete solution")
+    timer = Timer("2.4   Scalar flux update")
 
     for g in range(self.DD.G):
       phig = self.phi_mg[g]
@@ -649,7 +650,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     if self.eigenproblem:
       raise NotImplementedError
 
-    est_timer = Timer("-- Error estimation")
+    est_timer = Timer("3     Error estimation")
 
     form = ufl.zero()
 
@@ -719,7 +720,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
         # TODO: Fission part
 
     # Assemble error indicators
-    ass_timer = Timer("---- ERR: Assembling")
+    ass_timer = Timer("3.1   Assembling err. rep. form")
     assemble(form, tensor=self.err_ind_vec)
     ass_timer.stop()
 
