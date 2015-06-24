@@ -95,7 +95,7 @@ assert PD.G == 1
 assert PD.scattering_order == 1
 
 DD.print_diagnostics()
-DD.visualize_mesh_data()
+DD.visualize()
 
 St_fun = Function(DD.V0)
 D_fun = Function(DD.V0)
@@ -170,7 +170,7 @@ def test_mesh_module(idx, core_spec=""):
   assert pd.scattering_order == 1
 
   dd.print_diagnostics()
-  dd.visualize_mesh_data()
+  dd.visualize()
 
   St = Function(dd.V0)
   D = Function(dd.V0)
@@ -242,7 +242,7 @@ assert pd.G == 1
 assert pd.scattering_order == 1
 
 dd.print_diagnostics()
-dd.visualize_mesh_data()
+dd.visualize()
 
 Q = Function(dd.V0)
 Qa = Function(dd.V0)
