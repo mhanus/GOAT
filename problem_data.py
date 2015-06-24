@@ -402,7 +402,7 @@ class ProblemData(object):
       return False
 
     if F_fun is not None:
-      F_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values + Qa_values)
+      F_fun.vector()[:] = numpy.choose(self.regions_materials, 0.5 * (Q_values + Qa_values))
 
       if vis:
         label = "F"
@@ -417,7 +417,7 @@ class ProblemData(object):
         File(os.path.join(self.xs_vis_folder, label + ".pvd"), "compressed") << F_fun
 
     if G_fun is not None:
-      G_fun.vector()[:] = numpy.choose(self.regions_materials, Q_values - Qa_values)
+      G_fun.vector()[:] = numpy.choose(self.regions_materials, 0.5 * (Q_values - Qa_values))
 
       if vis:
         label = "G"
