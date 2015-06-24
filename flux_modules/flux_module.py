@@ -25,7 +25,9 @@ if MPI.rank(comm) == 0:
 
 from flux_modules import backend_ext_module
 
-
+#------------------------------------------------------------------------------#
+#                                SOLVER PARAMS                                 #
+#------------------------------------------------------------------------------#
 
 # noinspection PyArgumentList
 def get_parameters():
@@ -52,6 +54,13 @@ def get_parameters():
       results = 0,
       debug = 0,
       algebraic_system = 0
+    )
+  )
+  params.add(
+    Parameters(
+      "group_GS",
+      max_niter = -1,
+      tol = 1e-6
     )
   )
   return params
@@ -121,21 +130,49 @@ def coo_rep_on_zero(A, rows_glob=None, cols_glob=None, vals_glob=None, sym=False
 
   return __coo_rep_on_zero_internal(COO, rows_glob, cols_glob, vals_glob, sym)
 
+#------------------------------------------------------------------------------#
+#                        VISUALIZATION FILES CLASS                             #
+#------------------------------------------------------------------------------#
 
+# TODO: This is an ad-hoc class whose instance is passed to the FluxModule
+# constructor, allowing to store solutions from subsequent adaptivity runs in
+# one file and animate them afterwards. Optimally, the FluxModule object should
+# not be recreated every adaptivity run (all spaces and functions it contains
+# should be adapted in an analogous way as Discretization MeshFunctions are);
+# then, this class would not be needed.
+
+class VisualizationFiles(object):
+  def __init__(self, out_folder, G):
+    super(VisualizationFiles,self).__init__()
+
+    self.vis_folder = os.path.join(out_folder, "FLUX")
+
+    self.vis_files = dict()
+    var = "cell_powers"
+    self.vis_files[var] = File(os.path.join(self.vis_folder, var+".pvd"), "compressed")
+    var = "err_ind"
+    self.vis_files[var] = File(os.path.join(self.vis_folder, var+".pvd"), "compressed")
+    var = "flux"
+    self.vis_files[var] = [
+      File(os.path.join(self.vis_folder, "{}_g{}.pvd".format(var, g)), "compressed") for g in range(G)
+    ]
 #------------------------------------------------------------------------------#
 #                             MAIN FLUX MODULE                                 #
 #------------------------------------------------------------------------------#
+
+tot_err_est_list = []   # TODO: move it from the global scope
 
 class FluxModule(object):
   """
   Module responsible for calculating scalar fluxes and keff eigenvalue
   """
 
-  def __init__(self, PD, DD, verbosity):
+  def __init__(self, PD, DD, FV, verbosity):
     """
     Constructor
     :param ProblemData PD: Problem information and various mesh-region <-> xs-material mappings
     :param Discretization DD: Discretization data
+    :param VisualizationFiles FV: Visualization files
     :param int verbosity: Verbosity level.
     """
 
@@ -150,12 +187,6 @@ class FluxModule(object):
     self.DD = DD
     self.BC = PD.bc
 
-    try:
-      self.fixed_source_problem = PD.fixed_source_problem
-      self.eigenproblem = PD.eigenproblem
-    except AttributeError:
-      raise # TODO: Error - you have to call PD.distribute_material_data first
-
     self.A = PETScMatrix()
 
     # unused in case of an eigenvalue problem
@@ -169,7 +200,7 @@ class FluxModule(object):
     self.cols_B = None
     self.vals_B = None
 
-    if self.fixed_source_problem:
+    if self.PD.fixed_source_problem:
       self.src_F = Function(self.DD.V0)
       self.src_G = Function(self.DD.V0)
       self.vals_Q = None
@@ -208,7 +239,7 @@ class FluxModule(object):
 
     self.parameters = parameters["flux_module"]
 
-    if self.eigenproblem:
+    if self.PD.eigenproblem:
       assert self.parameters.has_parameter_set("eigensolver")
       self.eigen_params = self.parameters["eigensolver"]
       self.adaptive_eig_tol_end = 0
@@ -227,22 +258,12 @@ class FluxModule(object):
     self.cell_RR_form = self.R * self.phig * self.v0 * dx
     self._cell_RRg_vector = PETScVector()
 
-    self.vis_folder = os.path.join(self.PD.out_folder, "FLUX")
-
-    self.vis_files = dict()
-    var = "cell_powers"
-    self.vis_files[var] = File(os.path.join(self.vis_folder, var+".pvd"), "compressed")
-    var = "err_ind"
-    self.vis_files[var] = File(os.path.join(self.vis_folder, var+".pvd"), "compressed")
-    var = "flux"
-    self.vis_files[var] = [
-      File(os.path.join(self.vis_folder, "{}_g{}.pvd".format(var, g)), "compressed") for g in range(self.DD.G)
-    ]
+    self.vis_files = FV.vis_files
 
     variables = self.parameters["saving"].iterkeys()
     self.save_folder = { k : os.path.join(self.PD.out_folder, k.upper()) for k in variables }
 
-    self.tot_err_est = []
+    self.tot_err_est = 0
 
   # noinspection PyTypeChecker
   def save_algebraic_system(self, mat_file_name=None, it=0):
@@ -262,16 +283,16 @@ class FluxModule(object):
 
     self.rows_A, self.cols_A, self.vals_A = coo_rep_on_zero(self.A, self.rows_A, self.cols_A, self.vals_A)
 
-    if self.eigenproblem:
+    if self.PD.eigenproblem:
       self.rows_B, self.cols_B, self.vals_B = coo_rep_on_zero(self.B, self.rows_B, self.cols_B, self.vals_B)
-    elif self.fixed_source_problem:
+    elif self.PD.fixed_source_problem:
       self.vals_Q = self.Q.gather_on_zero()
 
     if MPI.rank(comm) == 0:
       if not mat_file_name:
         mat_file_name['A'] = 'A'
-        if self.eigenproblem: mat_file_name['B'] = 'B'
-        if self.fixed_source_problem: mat_file_name['Q'] = 'Q'
+        if self.PD.eigenproblem: mat_file_name['B'] = 'B'
+        if self.PD.fixed_source_problem: mat_file_name['Q'] = 'Q'
 
       for k,v in mat_file_name.iteritems():
         mat_file_name[k] = os.path.join(self.save_folder["algebraic_system"], v)
@@ -283,7 +304,7 @@ class FluxModule(object):
                 'vals':self.vals_A },
               do_compression=True)
 
-      if self.eigenproblem:
+      if self.PD.eigenproblem:
         if self.verb > 2: print0( self.print_prefix + "  Saving B to " + mat_file_name['B']+'.mat' )
         savemat(mat_file_name['B']+'.mat',
                 { 'rows':numpy.asarray(self.rows_B, dtype='d'),
@@ -291,7 +312,7 @@ class FluxModule(object):
                   'vals':self.vals_B },
                 do_compression=True)
 
-      elif self.fixed_source_problem:
+      elif self.PD.fixed_source_problem:
         if self.verb > 2: print0( self.print_prefix + "  Saving Q to " + mat_file_name['Q']+'.mat' )
         savemat(mat_file_name['Q']+'.mat',
                 { 'vals':self.vals_Q },
@@ -358,8 +379,9 @@ class FluxModule(object):
         self.update_phi()
 
       for g in xrange(self.DD.G):
-        self.phi_mg[g].rename("phi","phi_g{}".format(g))
-        self.vis_files[var][g] << (self.phi_mg[g], float(it))
+        fluxg = self.phi_mg[g]
+        fluxg.rename("phi","phi_g{}".format(g))
+        self.vis_files[var][g] << (fluxg, float(it))
 
     var = "err_ind"
     try:
@@ -368,17 +390,17 @@ class FluxModule(object):
       should_vis = False
 
     if should_vis:
-      self.err_ind_fun.rename("err_ind", "error_indicators")
       self.err_ind_fun.vector()[:] = self.err_ind_vec
+      self.err_ind_fun.rename("err_ind", "error_indicators")
       self.vis_files[var] << (self.err_ind_fun, float(it))
 
   def print_results(self):
     if self.verb > 2:
-      if self.eigenproblem:
+      if self.PD.eigenproblem:
         print0(self.print_prefix + "keff = {}".format(self.keff))
 
       print0(self.print_prefix + "Auxiliary residual norm: {}".format(self.residual_norm()))
-      print0(self.print_prefix + "Total error estimate: {}".format(self.tot_err_est[-1]))
+      print0(self.print_prefix + "Total error estimate: {}".format(self.tot_err_est))
 
   def eigenvalue_residual_norm(self, norm_type='l2'):
     r = PETScVector()
@@ -400,7 +422,7 @@ class FluxModule(object):
     return norm(self.Q - y, norm_type)
 
   def residual_norm(self, norm_type='l2'):
-    if self.eigenproblem:
+    if self.PD.eigenproblem:
       return self.eigenvalue_residual_norm(norm_type)
     else:
       return self.fixed_source_residual_norm(norm_type)
@@ -467,7 +489,7 @@ class FluxModule(object):
     self.assemble_algebraic_system()
     self.save_algebraic_system(it)
 
-    if self.eigenproblem:
+    if self.PD.eigenproblem:
       self.solve_keff(it)
     else:
       self.solve_fixed_source(it)

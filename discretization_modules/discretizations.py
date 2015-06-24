@@ -28,12 +28,14 @@ class SNDiscretization(Discretization):
     if self.verb > 2:
       self.angular_quad.print_info()
 
-  def init_solution_spaces(self, group_GS=False):
+  def init_solution_spaces(self):
     super(SNDiscretization, self).init_solution_spaces()
 
     self.t_spaces.start()
 
     self.Vpsi1 = VectorFunctionSpace(self.mesh, "CG", self.parameters["p"], self.M)
+
+    group_GS = self.parameters["group_treatment"] == "GS"
 
     if not group_GS:
       self.V = MixedFunctionSpace([self.Vpsi1]*self.G)

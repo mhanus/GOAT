@@ -11,6 +11,7 @@ from common import *
 #------------------------------------------------------------------------------#
 
 from argparse import ArgumentParser
+from flux_modules.flux_module import tot_err_est_list
 
 parser = ArgumentParser(description='Description.')
 parser.add_argument('problem_name',
@@ -64,7 +65,8 @@ if args.print_actual_parameters:
 #------------------------------------------------------------------------------#
 
 from discretization_modules.discretizations import SNDiscretization as Discretization
-from flux_modules.elliptic_sn_flux_module import EllipticSNFluxModule as FluxModule
+from flux_modules.elliptic_sn_flux_module import EllipticSNFluxModule as FluxModule,\
+                                                 EllipticSNVisualizationFiles as FluxVisualizationFiles
 from problem_data import ProblemData
 
 
@@ -82,6 +84,7 @@ if args.verbosity > 1: print "Process {}: initializing...".format(MPI.rank(comm)
 
 PD = ProblemData(args.problem_name, args.core, args.mesh, args.verbosity)
 DD = Discretization(PD, args.SN_order, args.verbosity)
+FV = FluxVisualizationFiles(PD.out_folder, DD.G, DD.M)  # TODO: this is ad-hoc, see flux_module.py
 
 t_init.stop()
 init_timings_table = dolfin_common.timings(True)
@@ -95,12 +98,15 @@ for it in range(DD.parameters["adaptivity"]["max_it"]):
   print
   print
   print "|===========================================|"
-  print "|          ADAPTIVITY ITERATION {}          |".format(it)
+  print "|          ADAPTIVITY ITERATION {}           |".format(it)
   print "|===========================================|"
   print
   print
 
-  FM = FluxModule(PD, DD, args.verbosity)
+  DD.init_solution_spaces()
+  PD.distribute_material_data(DD.cell_regions, DD.M)
+
+  FM = FluxModule(PD, DD, FV, args.verbosity)
 
   FM.solve(it)
   FM.compute_errors()
@@ -123,4 +129,6 @@ print_timings( sln_timings_table,
                os.path.join(PD.out_folder, "sln_timings.txt"), os.path.join(PD.out_folder, "sln_timings.tex") )
 
 import matplotlib.pyplot as plt
-plt.loglog(numpy.array(DD.ncells), numpy.array(FM.tot_err_est))
+plt.loglog(numpy.array(DD.ncells), numpy.array(tot_err_est_list))
+plt.axis('equal')
+plt.show()

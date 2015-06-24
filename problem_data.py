@@ -1,12 +1,26 @@
 from collections import defaultdict
 import os, imp, sys
-from dolfin.cpp.common import warning, Timer, MPI
+from dolfin.cpp.common import warning, Timer, MPI, Parameters
+from dolfin import parameters
 from dolfin.cpp.io import File
 import numpy
 from common import pid, coupled_solver_error, mkdir_p, comm
 from material_data_parser import parse_material
 
 __author__ = 'Milan'
+
+# noinspection PyArgumentList
+def get_parameters():
+  """
+  Create a record in the Dolfin parameters database that stores problem type.
+  :return: Parameters
+  """
+  params = Parameters(
+    "problem",
+    type = ("FS", ["FS, KEFF"])
+  )
+
+  return params
 
 class MeshFiles:
   def __init__(self, folder, mesh_base_name):
@@ -38,6 +52,16 @@ class ProblemData(object):
     self.verb = verbosity
     self.name = problem_name
     self.core_spec_file = core_spec_file
+
+    self.parameters = parameters["problem"]
+
+    self.fixed_source_problem = False
+    self.eigenproblem = False
+
+    if self.parameters["type"] == "FS":
+      self.fixed_source_problem = True
+    elif self.parameters["type"] == "KEFF":
+      self.eigenproblem = True
 
     self.xsd = dict()
 
@@ -294,9 +318,10 @@ class ProblemData(object):
 
       xs_data.close()
 
-    self.fixed_source_problem = 'Q' in self.used_xs
-    self.eigenproblem = len({'nSf', 'chi'}.intersection(self.used_xs)) == 2 and not self.fixed_source_problem
-    assert self.fixed_source_problem or self.eigenproblem
+    if self.fixed_source_problem:
+      assert 'Q' in self.used_xs
+    elif self.eigenproblem:
+      assert len({'nSf', 'chi'}.intersection(self.used_xs)) == 2
 
   # noinspection PyTypeChecker
   def get_xs(self, xs, xs_fun, gto=0, gfrom=0, k=0, vis=False):

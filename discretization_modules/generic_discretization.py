@@ -12,6 +12,7 @@ def get_parameters():
   params = Parameters(
     "discretization", 
     p = 1,
+    group_treatment = ("GS", ["GS", "coupled"])
   )
 
   params.add(
@@ -45,6 +46,9 @@ class Discretization(object):
     self.verb = verbosity
     self.G = problem.G
     self.problem = problem
+
+    if self.G == 1:
+      self.parameters["group_treatment"] = "GS"
 
     if self.verb > 1: print pid+"Loading mesh"
         

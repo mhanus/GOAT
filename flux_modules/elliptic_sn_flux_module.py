@@ -25,19 +25,24 @@ import flux_module
 # noinspection PyArgumentList
 def get_parameters():
   params = flux_module.get_parameters()
-  params.add(
-              Parameters(
-                "group_GS",
-                max_niter = -1,
-                tol = 1e-6
-              )
-            )
   params["visualization"].add("angular_flux", 1)
   params["visualization"].add("adjoint_angular_flux", 1)
-  return params 
-  
+  return params
 
-class EllipticSNFluxModule(flux_module.FluxModule):  
+class EllipticSNVisualizationFiles(flux_module.VisualizationFiles):
+  def __init__(self,out_folder,G,M):
+    super(EllipticSNVisualizationFiles,self).__init__(out_folder,G)
+
+    for var in {"angular_flux", "adjoint_angular_flux"}:
+      self.vis_files[var] = \
+      [
+        [
+          File(os.path.join(self.vis_folder, "{}_g{}_m{}.pvd".format(var,g,m)), "compressed") for m in range(M)
+        ]
+        for g in range(G)
+      ]
+
+class EllipticSNFluxModule(flux_module.FluxModule):
   """
   Flux solver based on elliptic discrete ordinates formulation
   """
@@ -59,27 +64,25 @@ class EllipticSNFluxModule(flux_module.FluxModule):
       self.Wp = ufl.as_vector( angular_quad.get_pw() )
       self.W = ufl.diag(self.Wp)
       
-  def __init__(self, PD, DD, verbosity):
+  def __init__(self, PD, DD, FV, verbosity):
     """
     Constructor
     :param ProblemData PD: Problem information and various mesh-region <-> xs-material mappings
     :param SNDiscretization DD: Discretization data
+    :param EllipticSNVisualizationFiles: Visualization files
     :param int verbosity: Verbosity level.
     """
+    super(EllipticSNFluxModule, self).__init__(PD, DD, FV, verbosity)
 
-    self.max_group_GS_it = parameters["flux_module"]["group_GS"]["max_niter"]
-    self.group_GS = self.max_group_GS_it > 0  
+    self.group_GS = DD.parameters["group_treatment"] == "GS"
 
-    if DD.G == 1:
-      self.group_GS = True
-      self.max_group_GS_it = 1
+    if self.group_GS:
+      self.max_group_GS_it = parameters["flux_module"]["group_GS"]["max_niter"]
 
-    DD.init_solution_spaces(self.group_GS)
-    PD.distribute_material_data(DD.cell_regions, DD.M)
+      if DD.G == 1:
+        self.max_group_GS_it = 1
 
-    super(EllipticSNFluxModule, self).__init__(PD, DD, verbosity)
-
-    if PD.fixed_source_problem:
+    if self.PD.fixed_source_problem:
       self.vals_Q = numpy.empty(self.DD.ndof,dtype='float64')
 
     if self.verb > 1: print0("Defining coefficient functions and tensors")
@@ -126,15 +129,6 @@ class EllipticSNFluxModule(flux_module.FluxModule):
       self.C[l] = Function(self.DD.V0)
       self.S[l] = Function(self.DD.V0)
 
-    for var in {"angular_flux", "adjoint_angular_flux"}:
-      self.vis_files[var] = \
-      [
-        [
-          File(os.path.join(self.vis_folder, "{}_g{}_m{}.pvd".format(var,g,m)), "compressed") for m in range(self.DD.M)
-        ]
-        for g in range(self.DD.G)
-      ]
-
     PD.distribute_boundary_fluxes()
     self.__define_boundary_terms()
 
@@ -153,7 +147,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     nonzero_inc_flux = any(map(nonzero, self.BC.incoming_fluxes.values()))
     nonzero_out_flux = any(map(nonzero, self.BC.outgoing_fluxes.values()))
 
-    if nonzero_inc_flux and not self.fixed_source_problem:
+    if nonzero_inc_flux and not self.PD.fixed_source_problem:
       coupled_solver_error(__file__,
                    "define boundary terms",
                    "Incoming flux specified for an eigenvalue problem"+\
@@ -220,7 +214,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
   def solve_group_GS(self, it=0, init_slns_ary=None):
     if self.verb > 1: print0(self.print_prefix + "Solving..." )
   
-    if self.eigenproblem:  
+    if self.PD.eigenproblem:  
       coupled_solver_error(__file__,
                            "solve using group GS",
                            "Group Gauss-Seidel for eigenproblem not yet supported")
@@ -285,7 +279,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
           
         ass_timer.stop()
 
-        if self.fixed_source_problem:
+        if self.PD.fixed_source_problem:
           if self.PD.isotropic_source_everywhere:
             self.PD.get_FG(self.src_F, self.src_G, 0, gto)
 
@@ -345,7 +339,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
             ass_timer.stop()
 
-            if self.fixed_source_problem:
+            if self.PD.fixed_source_problem:
               if self.PD.isotropic_source_everywhere:
                 self.PD.get_FG(None, self.src_G, 0, gfrom)
                 form = self.src_G * self.tensors.QtT[p,i,k1]*Cd[k1,k2]*self.tensors.Q[k2,q]*v[p].dx(i) * dx
@@ -373,7 +367,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
                 # NOTE: Fixed-source case (eigenproblems can currently be solved only by the coupled-group scheme)
                 # FIXME: The following code should be OK, but it will require changing some of the previous forms to
                 # actually contain fission contribution to T^{-1}.
-                # if self.fixed_source_problem:
+                # if self.PD.fixed_source_problem:
                 #   form = -self.chi*self.R/(4*numpy.pi)*self.tensors.QT[p,0]*self.tensors.Q[0,q]*u[q]*v[p]*dx
                 #   assemble(form, tensor=self.A, finalize_tensor=False, add_values=add_values_A)
                 raise NotImplementedError # This effectively makes nSf unusable
@@ -406,7 +400,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
 
 
   def assemble_algebraic_system(self):
-    if self.eigenproblem:
+    if self.PD.eigenproblem:
       raise NotImplementedError   # This effectively prevents anybody to solve the eigenvalue problems
     
     if self.verb > 1: print0(self.print_prefix + "Assembling algebraic system.")
@@ -443,7 +437,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
         
       ass_timer.stop()
 
-      if self.fixed_source_problem:
+      if self.PD.fixed_source_problem:
         if self.PD.isotropic_source_everywhere:
           self.PD.get_FG(self.src_F, None, 0, gto)
           # FIXME: This assumes that adjoint source == forward source (i.e. self.src_G == 0)
@@ -502,7 +496,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
         #   if pres_nSf:
         #     ass_timer.start()
         #
-        #     if self.fixed_source_problem:
+        #     if self.PD.fixed_source_problem:
         #       form = -self.chi*self.R/(4*numpy.pi)*\
         #              self.tensors.QT[p,0]*self.tensors.Q[0,q]*self.u[gfrom][q]*self.v[gto][p]*dx
         #       assemble(form, tensor=self.A, finalize_tensor=False, add_values=add_values_A)
@@ -517,9 +511,9 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     #=============================  END LOOP OVER GROUPS AND ASSEMBLE  ===============================
                         
     self.A.apply("add")
-    if self.fixed_source_problem:
+    if self.PD.fixed_source_problem:
       self.Q.apply("add")
-    #if self.eigenproblem:
+    #if self.PD.eigenproblem:
     #  self.B.apply("add")
 
                     
@@ -630,7 +624,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
             self.vis_files[var][g][n] << (fgn, float(it))
 
   def compute_errors(self):
-    if self.eigenproblem:
+    if self.PD.eigenproblem:
       raise NotImplementedError
 
     est_timer = Timer("3     Error estimation")
@@ -708,4 +702,5 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     ass_timer.stop()
 
     # Calculate total error
-    self.tot_err_est.append(abs(MPI.sum(comm, numpy.sum(self.err_ind_vec.array()))))
+    self.tot_err_est = abs(MPI.sum(comm, numpy.sum(self.err_ind_vec.array())))
+    flux_module.tot_err_est_list.append(self.tot_err_est)
