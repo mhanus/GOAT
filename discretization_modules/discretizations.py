@@ -29,7 +29,7 @@ class SNDiscretization(Discretization):
       self.angular_quad.print_info()
 
   def init_solution_spaces(self, group_GS=False):
-    if self.verb > 1: print0("Defining function spaces" )
+    super(SNDiscretization, self).init_solution_spaces()
 
     self.t_spaces.start()
 

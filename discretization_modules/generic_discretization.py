@@ -1,13 +1,11 @@
 import os, numpy
-from dolfin import FunctionSpace, parameters, compile_extension_module
+from dolfin import FunctionSpace, parameters, compile_extension_module,refine
+from dolfin.cpp.fem import adapt
 from dolfin.cpp.io import File
-from dolfin.cpp.common import Timer, Parameters, IntArray, DoubleArray, MPI
-from dolfin.cpp.mesh import Mesh, CellFunction, MeshFunction
+from dolfin.cpp.common import Timer, Parameters, IntArray, DoubleArray, MPI,warning
+from dolfin.cpp.mesh import Mesh, CellFunction, MeshFunction,cells
 
 from common import pid, comm, print0
-
-# TODO: Add capability of visualizing mesh data every n-th iteration of an outer (adaptivity) loop, appending the
-#       visualizations to the output file, so that they can be animated afterwards.
 
 # noinspection PyArgumentList
 def get_parameters():
@@ -15,12 +13,29 @@ def get_parameters():
     "discretization", 
     p = 1,
   )
+
+  params.add(
+    Parameters(
+      "adaptivity",
+      threshold = 0.55,
+      max_it = 10
+    )
+  )
+
+  params.add(
+    Parameters(
+      "visualization",
+      mesh = 1,
+      regions = 1,
+      boundaries = 0,
+      partitioning = 0
+    )
+  )
   return params
 
 class Discretization(object):
   def __init__(self, problem, verbosity=0):
     """
-
     :param ProblemData problem:
     :param int verbosity:
     :return:
@@ -28,9 +43,8 @@ class Discretization(object):
     self.parameters = parameters["discretization"]
 
     self.verb = verbosity
-    self.vis_folder = os.path.join(problem.out_folder, "MESH")
-    self.core = problem.core
     self.G = problem.G
+    self.problem = problem
 
     if self.verb > 1: print pid+"Loading mesh"
         
@@ -41,21 +55,39 @@ class Discretization(object):
       self.mesh = Mesh(problem.mesh_files.mesh)
 
       if self.verb > 1: print pid + "  physical data"
-      self.cell_regions_fun = MeshFunction("size_t", self.mesh, problem.mesh_files.physical_regions)
+      self.cell_regions_fun = MeshFunction("size_t", self.mesh, self.problem.mesh_files.physical_regions)
 
       if self.verb > 1: print pid + "  boundary data"
-      self.boundaries = MeshFunction("size_t", self.mesh, problem.mesh_files.facet_regions)
+      self.boundaries = MeshFunction("size_t", self.mesh, self.problem.mesh_files.facet_regions)
     else:
       self.mesh = problem.mesh_module.mesh
-      self.cell_regions_fun = problem.mesh_module.regions
+      self.cell_regions_fun = self.problem.mesh_module.regions
 
       try:
-        self.boundaries = problem.mesh_module.boundaries
+        self.boundaries = self.problem.mesh_module.boundaries
       except AttributeError:
         self.boundaries = None
 
-    assert self.mesh
     assert self.boundaries is None or self.boundaries.array().size > 0
+
+    # Spaces that must be specified by the respective subclasses
+    self.V = None     # solution space
+    self.Vphi1 = None # 1-g scalar flux space
+
+    # Visualization stuff
+    self.vis_folder = os.path.join(problem.out_folder, "MESH")
+    self.vis_vars = ["mesh", "regions", "boundaries", "partitioning"]
+    self.vis_files = dict()
+    for var in self.vis_vars:
+      self.vis_files[var] = File(os.path.join(self.vis_folder, var+".pvd"), "compressed")
+
+    self.ncells = []
+    self.persistence = [] # See init_solution_spaces
+
+  def init_solution_spaces(self):
+    # FIXME: This is needed because of the bug in Dolfin's memory management in adapt (Issue #319)
+    self.persistence.append(self.cell_regions_fun)
+    self.persistence.append(self.boundaries)
 
     if self.verb > 2:
       print pid+"  mesh info: " + str(self.mesh)
@@ -64,10 +96,6 @@ class Discretization(object):
 
     self.t_spaces = Timer("DD: Function spaces construction")
 
-    # Spaces that must be specified by the respective subclasses
-    self.V = None     # solution space
-    self.Vphi1 = None # 1-g scalar flux space
-    
     # XS / TH space
     self.V0 = FunctionSpace(self.mesh, "DG", 0)
     self.ndof0 = self.V0.dim()
@@ -151,7 +179,8 @@ class Discretization(object):
     cell_mapping_module = compile_extension_module(code)
 
     cell_layers_array =  IntArray(self.local_ndof0)
-    cell_mapping_module.fill_in(cell_layers_array, self.mesh, self.local_cell_dof_map, self.core.layer_boundaries)
+    cell_mapping_module.fill_in(cell_layers_array, self.mesh, self.local_cell_dof_map,
+                                self.problem.core.layer_boundaries)
     self._local_cell_layers = cell_layers_array.array()
 
     timer.stop()
@@ -213,18 +242,31 @@ class Discretization(object):
       self.__create_cell_layers_mapping()
     return self._local_cell_layers
 
-  def visualize_mesh_data(self):
+  def visualize(self, it=0):
     timer = Timer("DD: Mesh data visualization")
     if self.verb > 2: print0("Visualizing mesh data")
 
-    File(os.path.join(self.vis_folder, "mesh.pvd"), "compressed") << self.mesh
-    if self.boundaries:
-      File(os.path.join(self.vis_folder, "boundaries.pvd"), "compressed") << self.boundaries
-    File(os.path.join(self.vis_folder, "mesh_regions.pvd"), "compressed") << self.cell_regions_fun
+    # Create MeshFunction to hold cell process rank, if it is required to be vis'd
+    processes = None
+    try:
+      if divmod(it, self.parameters["visualization"]["partitioning"])[1] == 0:
+        processes = CellFunction('size_t', self.mesh, MPI.rank(comm))
+    except ZeroDivisionError:
+      pass
 
-    # Create MeshFunction to hold cell process rank
-    processes = CellFunction('size_t', self.mesh, MPI.rank(comm))
-    File(os.path.join(self.vis_folder, "mesh_partitioning.pvd"), "compressed") << processes
+    functs = [self.mesh, self.cell_regions_fun, self.boundaries, processes]
+    for var,fnc in zip(self.vis_vars, functs):
+      try:
+        should_vis = divmod(it, self.parameters["visualization"][var])[1] == 0
+      except ZeroDivisionError:
+        should_vis = False
+
+      if should_vis:
+        fnc.rename(var, var)
+        try:
+          self.vis_files[var] << (fnc, float(it))
+        except:
+          warning("Failed to visualize " + var + ".")
 
   def print_diagnostics(self):
     print "\nDiscretization diagnostics"
@@ -239,3 +281,33 @@ class Discretization(object):
 
     print "#Owned by {}: {}".format(MPI.rank(comm), dofmap.local_dimension("owned"))
     print "#Unowned by {}: {}".format(MPI.rank(comm), dofmap.local_dimension("unowned"))
+
+  def adapt(self, err_ind):
+    t_adapt = Timer("4     AMR")
+    if self.verb > 1:
+      print0("Adapting mesh.")
+
+    # Mark cells for refinement based on maximal marking strategy
+
+    t_mark =  Timer("4.1   Marking")
+    if self.verb > 2:
+      print0("  Marking cells for refinement.")
+
+    err_ind = numpy.fabs(err_ind.array())
+    largest_error = numpy.max(err_ind)
+    cell_markers = MeshFunction("bool", self.mesh, self.mesh.topology().dim())
+    thr = self.parameters['adaptivity']['threshold']
+    for c in cells(self.mesh):
+      cell_markers[c] = err_ind[c.index()] > (thr*largest_error)
+
+    # Refine mesh and associated meshfunctions
+
+    t_ref =   Timer("4.2   Refinement")
+    if self.verb > 2:
+      print0("  Refining the mesh and associated meshfunctions.")
+
+    self.mesh = adapt(self.mesh, cell_markers)
+    self.cell_regions_fun = adapt(self.cell_regions_fun, self.mesh)
+    self.boundaries = adapt(self.boundaries, self.mesh)
+
+    self.ncells.append(self.mesh.num_cells())

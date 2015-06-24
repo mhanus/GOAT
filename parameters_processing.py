@@ -13,6 +13,7 @@ def set_default_dolfin_parameters():
   dolfin.parameters['form_compiler']['optimize'] = True
   dolfin.parameters['form_compiler']['cpp_optimize'] = True
   dolfin.parameters['form_compiler']['cpp_optimize_flags'] = '-O3'
+  dolfin.parameters["refinement_algorithm"] = "plaza_with_parent_facets"
   #dolfin.parameters['form_compiler']['representation'] = 'quadrature'
   #dolfin.parameters["form_compiler"]["quadrature_degree"] = 2
 

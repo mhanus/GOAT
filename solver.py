@@ -74,7 +74,7 @@ from problem_data import ProblemData
 #=======================================================================================================================
 # MODULES INITIALIZATION - discretization, problem specs, materials, T/H feedback, flux solver
 #
-t_init = dolfin_common.Timer("1     Complete initialization")
+t_init = dolfin_common.Timer("1     Problem initialization")
 
 if args.verbosity > 1: print "Process {}: initializing...".format(MPI.rank(comm))
 
@@ -82,21 +82,34 @@ if args.verbosity > 1: print "Process {}: initializing...".format(MPI.rank(comm)
 
 PD = ProblemData(args.problem_name, args.core, args.mesh, args.verbosity)
 DD = Discretization(PD, args.SN_order, args.verbosity)
-FM = FluxModule(PD, DD, args.verbosity)
 
 t_init.stop()
-
 init_timings_table = dolfin_common.timings(True)
 print_timings(init_timings_table, args.verbosity > 0)
 
-#=======================================================================================================================
-# SOLUTION
-#
 
-FM.solve()
-FM.compute_errors()
-FM.print_results()
-FM.visualize()
+#=======================================================================================================================
+# ADAPTIVE SOLUTION LOOP
+#
+for it in range(DD.parameters["adaptivity"]["max_it"]):
+  print
+  print
+  print "|===========================================|"
+  print "|          ADAPTIVITY ITERATION {}          |".format(it)
+  print "|===========================================|"
+  print
+  print
+
+  FM = FluxModule(PD, DD, args.verbosity)
+
+  FM.solve(it)
+  FM.compute_errors()
+  FM.print_results()
+
+  DD.visualize(it)
+  FM.visualize(it)
+
+  DD.adapt(FM.err_ind_vec)
 
 #=======================================================================================================================
 # FINAL TIMINGS
@@ -108,3 +121,6 @@ print_timings( init_timings_table,
 print_timings( sln_timings_table,
                args.verbosity > 0,
                os.path.join(PD.out_folder, "sln_timings.txt"), os.path.join(PD.out_folder, "sln_timings.tex") )
+
+import matplotlib.pyplot as plt
+plt.loglog(numpy.array(DD.ncells), numpy.array(FM.tot_err_est))

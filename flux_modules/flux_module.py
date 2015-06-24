@@ -62,6 +62,8 @@ def get_parameters():
 
 def __coo_rep_on_zero_internal(COO, rows_glob=None, cols_glob=None, vals_glob=None, sym=False):
   # TODO: Remove the following two lines once we find out how to make mpi4py work in conjunction with Dolfin
+  print "test"
+
   if MPI.size(comm) > 1:
     return rows_glob, cols_glob, vals_glob
   
@@ -152,7 +154,7 @@ class FluxModule(object):
       self.fixed_source_problem = PD.fixed_source_problem
       self.eigenproblem = PD.eigenproblem
     except AttributeError:
-      PD.distribute_material_data(DD.cell_regions, DD.M)
+      raise # TODO: Error - you have to call PD.distribute_material_data first
 
     self.A = PETScMatrix()
 
@@ -176,7 +178,6 @@ class FluxModule(object):
     self.phi_mg = []
     for g in range(self.DD.G):
       phig = Function(self.DD.Vphi1)
-      phig.rename("phi","phi_g{}".format(g))
       self.phi_mg.append(phig)
 
     self.sln = Function(DD.V)
@@ -185,7 +186,6 @@ class FluxModule(object):
 
     # error indicator function
     self.err_ind_fun = Function(self.DD.V0)
-    self.err_ind_fun.rename("err_ind", "error_indicators")
     self.err_ind_vec = self.err_ind_fun.vector()
 
     # auxiliary function for storing various DG(0) quantities (cross sections, group-integrated reaction rates, etc.)
@@ -242,7 +242,7 @@ class FluxModule(object):
     variables = self.parameters["saving"].iterkeys()
     self.save_folder = { k : os.path.join(self.PD.out_folder, k.upper()) for k in variables }
 
-    self.tot_err_est = 0
+    self.tot_err_est = []
 
   # noinspection PyTypeChecker
   def save_algebraic_system(self, mat_file_name=None, it=0):
@@ -345,7 +345,7 @@ class FluxModule(object):
         qfun = Function(self.DD.V0)
         qfun.vector()[:] = self.E
         qfun.rename("q", "Power")
-        self.vis_files["cell_powers"] << (qfun, float(it))
+        self.vis_files[var] << (qfun, float(it))
 
     var = "flux"
     try:
@@ -358,7 +358,19 @@ class FluxModule(object):
         self.update_phi()
 
       for g in xrange(self.DD.G):
-        self.vis_files["flux"][g] << (self.phi_mg[g], float(it))
+        self.phi_mg[g].rename("phi","phi_g{}".format(g))
+        self.vis_files[var][g] << (self.phi_mg[g], float(it))
+
+    var = "err_ind"
+    try:
+      should_vis = divmod(it, self.parameters["visualization"][var])[1] == 0
+    except ZeroDivisionError:
+      should_vis = False
+
+    if should_vis:
+      self.err_ind_fun.rename("err_ind", "error_indicators")
+      self.err_ind_fun.vector()[:] = self.err_ind_vec
+      self.vis_files[var] << (self.err_ind_fun, float(it))
 
   def print_results(self):
     if self.verb > 2:
@@ -366,7 +378,7 @@ class FluxModule(object):
         print0(self.print_prefix + "keff = {}".format(self.keff))
 
       print0(self.print_prefix + "Auxiliary residual norm: {}".format(self.residual_norm()))
-      print0(self.print_prefix + "Total error estimate: {}".format(self.tot_err_est))
+      print0(self.print_prefix + "Total error estimate: {}".format(self.tot_err_est[-1]))
 
   def eigenvalue_residual_norm(self, norm_type='l2'):
     r = PETScVector()

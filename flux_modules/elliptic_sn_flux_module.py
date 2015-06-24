@@ -70,20 +70,12 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     self.max_group_GS_it = parameters["flux_module"]["group_GS"]["max_niter"]
     self.group_GS = self.max_group_GS_it > 0  
 
-    try:
-      PD.eigenproblem
-    except AttributeError:
-      PD.distribute_material_data(DD.cell_regions, DD.M)
-
-    if PD.eigenproblem and self.group_GS:
-      print "Group Gauss-Seidel for eigenproblem not yet supported - switching to all-group coupled solution method."
-      self.group_GS = False
-
     if DD.G == 1:
       self.group_GS = True
       self.max_group_GS_it = 1
 
     DD.init_solution_spaces(self.group_GS)
+    PD.distribute_material_data(DD.cell_regions, DD.M)
 
     super(EllipticSNFluxModule, self).__init__(PD, DD, verbosity)
 
@@ -618,7 +610,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
       super(EllipticSNFluxModule,self).fixed_source_residual_norm(norm_type)
 
   def visualize(self, it=0):
-    super(EllipticSNFluxModule, self).visualize()
+    super(EllipticSNFluxModule, self).visualize(it)
 
     # TODO: Check if psi, adj_psi, err_ind have been actually computed
 
@@ -636,15 +628,6 @@ class EllipticSNFluxModule(flux_module.FluxModule):
             fgn = fnc[g].sub(n)
             fgn.rename(lbl, "{}_g{}_{}".format(lbl, g, n))
             self.vis_files[var][g][n] << (fgn, float(it))
-
-    var = "err_ind"
-    try:
-      should_vis = divmod(it, self.parameters["visualization"][var])[1] == 0
-    except ZeroDivisionError:
-      should_vis = False
-
-    if should_vis:
-      self.vis_files[var] << (self.err_ind_fun, float(it))
 
   def compute_errors(self):
     if self.eigenproblem:
@@ -725,6 +708,4 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     ass_timer.stop()
 
     # Calculate total error
-    self.tot_err_est = abs(MPI.sum(comm, numpy.sum(self.err_ind_vec.array())))
-
-    self.err_ind_fun.vector()[:] = self.err_ind_vec
+    self.tot_err_est.append(abs(MPI.sum(comm, numpy.sum(self.err_ind_vec.array()))))
