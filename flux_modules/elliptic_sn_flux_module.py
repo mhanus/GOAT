@@ -529,9 +529,6 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     sol_timer = Timer("2     Complete solution")
     aux_timer = Timer("2.3   Computing angular flux + adjoint")
 
-    # TODO: Move to Discretization
-    V11 = FunctionSpace(self.DD.mesh, "CG", self.DD.parameters["p"])
-
     # FIXME: This assumes all-isotropic source
     for gto in range(self.DD.G):
       self.PD.get_xs('D', self.D, gto)
@@ -567,10 +564,15 @@ class EllipticSNFluxModule(flux_module.FluxModule):
       # project(form, self.DD.Vpsi1, function=self.aux_slng, preconditioner_type="petsc_amg")
       # FASTER, but requires form compilation for each dir.:
       for pp in range(self.DD.M):
-        assign(self.aux_slng.sub(pp), project(expr[pp], V11, preconditioner_type="petsc_amg"))
+        assign(self.aux_slng.sub(pp), project(expr[pp], self.DD.Vphi1, preconditioner_type="petsc_amg"))
+        # File(os.path.join(self.FV.vis_folder, "u_g{}_m{}.pvd".format(gto,pp)), "compressed") << \
+        #   self.slns_mg[gto].sub(pp, deepcopy=True)
+        # File(os.path.join(self.FV.vis_folder, "v_g{}_m{}.pvd".format(gto,pp)), "compressed") << \
+        #   self.aux_slng.sub(pp, deepcopy=True)
 
       self.psi_mg[gto].assign(self.slns_mg[gto] + self.aux_slng)
       self.adj_psi_mg[gto].assign(self.slns_mg[gto] - self.aux_slng)
+
 
   def update_phi(self):
     tot_t = Timer("2     Complete solution")
@@ -579,6 +581,7 @@ class EllipticSNFluxModule(flux_module.FluxModule):
     for g in range(self.DD.G):
       phig = self.phi_mg[g]
       phig_v = phig.vector()
+      phig_v.zero()
       psig = self.psi_mg[g]
 
       for n in range(self.DD.M):

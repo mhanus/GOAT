@@ -258,6 +258,7 @@ class FluxModule(object):
     self.cell_RR_form = self.R * self.phig * self.v0 * dx
     self._cell_RRg_vector = PETScVector()
 
+    self.FV = FV  # for visualization of auxiliary functions (debugging)
     self.vis_files = FV.vis_files
 
     variables = self.parameters["saving"].iterkeys()

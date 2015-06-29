@@ -69,7 +69,7 @@ class ProblemData(object):
     if self.mesh_base_name == "":
       self.mesh_base_name = self.name
 
-    self.out_folder = os.path.join(self.folder, "OUT", self.mesh_base_name)
+    self.out_folder = os.path.join(self.folder, "OUT", core_spec_file, self.mesh_base_name)
     self.xs_vis_folder = os.path.join(self.out_folder, "XS")
 
     mkdir_p(self.xs_vis_folder)

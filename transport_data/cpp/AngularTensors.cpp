@@ -133,7 +133,7 @@ double SphericalHarmonic::plgndr(double x) const
 
 double SphericalHarmonic::operator()(double xi, double eta, double mu) const
 {
-	if(abs(mu*mu+eta*eta+xi*xi-1.0) > DOLFIN_EPS)
+	if(abs(mu*mu+eta*eta+xi*xi-1.0) > 10*DOLFIN_EPS)
 		dolfin_error("OrdinatesData.cpp",
 								"evaluate a spherical harmonic function",
 								"Invalid direction cosines: xi=%g, eta=%g, mu=%g (req. xi^2 + eta^2 + mu^2 == 1)", xi, eta, mu);

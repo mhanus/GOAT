@@ -129,6 +129,7 @@ print_timings( sln_timings_table,
                os.path.join(PD.out_folder, "sln_timings.txt"), os.path.join(PD.out_folder, "sln_timings.tex") )
 
 import matplotlib.pyplot as plt
-plt.loglog(numpy.array(DD.ncells), numpy.array(tot_err_est_list))
-plt.axis('equal')
+plt.semilogy(numpy.array(DD.ncells), numpy.array(tot_err_est_list), 'bx-')
+plt.grid(True)
+#plt.axis('equal')
 plt.show()
